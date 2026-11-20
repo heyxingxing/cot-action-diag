@@ -1,8 +1,8 @@
 # 进度记录（截至 2026-11-20）
 
-**一句话状态**：两个 Bench（ScienceWorld / TextWorldExpress）各 60 局全量实验已在 a800 跑完（exit 0），`data/` 和 `results/` 已拉回本地。对“w = f(C, H) 怎么设计”已有初步回答（§7）。还没做的：E14 人工盲标；是否把“去掉打转步”的对照并进分析脚本，尚未决定。
+**一句话状态**：两个 Bench（ScienceWorld / TextWorldExpress）各 60 局全量实验已在 a800 跑完（exit 0），`data/` 和 `results/` 已拉回本地。对“w = f(C, H) 怎么设计”已有初步回答（§7）。交互式报告已重写为 `index.html`，在线地址 https://heyxingxing.github.io/cot-action-diag/ 。还没做的：E14 人工盲标；是否把“去掉打转步”的对照并进分析脚本，尚未决定。
 
-> 数值来源说明：标“表”的数字直接取自 `results/*/tables/*.csv` 或 `report_summary.md`；标“图”的是看图读出的趋势，没有单独算数；“打转步”分层（§5.4）、报告核对（§8）和 §7 的分组数字由临时脚本基于 `turn_metrics.jsonl` 算出，**这些临时脚本没有入库**，需要复现时按文中定义重算。
+> 数值来源说明：标“表”的数字直接取自 `results/*/tables/*.csv` 或 `report_summary.md`；标“图”的是看图读出的趋势，没有单独算数；§7 的分组、报错后转移表（含聚类 bootstrap CI）和 token 级统计已写进 `scripts/06_build_html_report.py`，运行时打印并写入报告；§5.4 去掉打转步后的相关系数和 §8 的部分核对数字仍来自**未入库的临时脚本**，复现时需按文中定义重算。
 
 ---
 
@@ -165,7 +165,7 @@ $$
 
 两条待检验的假设：(a) 正向 CoT 里高熵 token 更值得更新；(b) 负向 CoT 里低熵 token 应罚得更重（“自信地错”）。
 
-**结论：只能给半个答案。** 诊断数据能说明 f 不能是什么样，但定不了 f 具体怎么写，后者需要训练对比。以下都是 step 级分析；分组用 |C| > 0.01，H 按任务内 H_C_mean 的中位数切分；A 用的是 A_turn_proxy（G3 的任务内标准化），不是真实优势。
+**结论：只能给半个答案。** 诊断数据能说明 f 不能是什么样，但定不了 f 具体怎么写，后者需要训练对比。以下都是 step 级分析；分组用 |C| > 0.01，H 按任务内 H_C_mean 的中位数切分；A 用的是 A_turn_proxy（含当前步的 G3_incl 在任务内标准化），不是真实优势；表中 G3 为严格未来收益 G3_strict。
 
 **7.1 “用 C_t 判断 CoT 正负”实际退化成 A_t 的符号**
 - I_t 有 93% 为正。在 C ≠ 0 的步里，sign(C) = sign(A) 的比例是 97.2%（SW）和 96.4%（TWX），方向几乎全部来自 A。
@@ -175,11 +175,11 @@ $$
 
 **7.2 w 不能带符号去乘 D（证据最硬）**
 - C < 0 的步占 80.1% / 82.8%，D_self 在 98% 的步里均值为负。负 w 乘负 D，等于把 Teacher 不认可的 token 往上推。
-- 步内 token 熵和 D 的相关平均为 -0.248 / -0.198（81.6% / 75.8% 的步为负）：D 最负的位置恰好是高熵的分岔 token，方向反转最严重的就是它们。
+- 步内 token 熵和 D 的相关平均为 -0.248 / -0.198（81.7% / 75.8% 的步为负）；按熵分段，D 的中位数从熵 ≤ 0.05 的约 0 降到熵 > 1 的 -1.37 / -1.38。单个 token 上反转幅度最大的是高熵的分岔 token。
 - 例：TWX coin s1000 第 4 步，模型说“硬币不在浴室和储藏室”，实际从没进去过，D = -2.82。这一步 C < 0，相乘后反而会奖励这句编造。
 - 因此 f ≥ 0，只决定幅度；逐 token 方向交给 D，不翻转。“CoT 好坏”的符号单独作为一项 RL 信号相加。
 
-**7.3 假设 (b)（负向 CoT 低熵罚更重）：不支持**
+**7.3 假设 (b)（负向 CoT 低熵罚更重）：没有一致证据**
 
 | SW 分组 | n | valid | G3 | succ | 打转步占比 | D_self 均值 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -188,22 +188,22 @@ $$
 | C<0 高 H | 396 | 0.45 | -0.737 | 0.05 | 0.09 | -1.02 |
 | C<0 低 H | 139 | 0.40 | 0.835 | 0.03 | 0.12 | -1.18 |
 
-| TWX 分组 | n | valid | G3 | succ | D_self 均值 |
-| --- | --- | --- | --- | --- | --- |
-| C>0 高 H | 27 | 0.81 | 0.431 | 0.52 | 未算 |
-| C>0 低 H | 23 | 0.78 | 0.255 | 0.43 | 未算 |
-| C<0 高 H | 398 | 0.51 | 0.012 | 0.17 | -1.40 |
-| C<0 低 H | 237 | 0.55 | 0.027 | 0.16 | -1.52 |
+| TWX 分组 | n | valid | G3 | succ | 打转步占比 | D_self 均值 |
+| --- | --- | --- | --- | --- | --- | --- |
+| C>0 高 H | 27 | 0.81 | 0.431 | 0.52 | 0.11 | -1.15 |
+| C>0 低 H | 23 | 0.78 | 0.255 | 0.43 | 0 | -1.32 |
+| C<0 高 H | 396 | 0.51 | 0.012 | 0.17 | 0.09 | -1.40 |
+| C<0 低 H | 239 | 0.55 | 0.027 | 0.15 | 0.11 | -1.52 |
 
-- C < 0 里，低 H 的步并不更差：SW 合法率 0.40 vs 0.45，但 G3 是 +0.84 vs -0.74；TWX 合法率 0.55 vs 0.51。
+- C < 0 里，低 H 的步没有一致地更差：SW 合法率 0.40 vs 0.45，G3_strict 是 +0.84 vs -0.74；TWX 合法率 0.55 vs 0.51。但这依赖收益口径：若用含当前步的 G3_incl（构造 A 的那个量），SW 低 H 组反而更差（-2.04 vs -1.26）。
 - “自信地错”大多是打转：H_C 最低 1/4 的不合法步里，打转步占 84%（SW）/ 46%（TWX），其余不合法步里是 50% / 33%。
-- 结构上也做不到：低熵 token 上 D 接近 0（步内熵和 D 负相关；token 级 D 中位数约 -0.004），w 再大，w·D 也罚不到它们。要罚“自信地错”只能靠 RL 项。此条由步级汇总推出，未做 token 级直接验证。
+- **更正（2026-11-20 token 级直接检验）**：之前由步级汇总推出的“低熵 token 上 D 接近 0、w·D 罚不到它们”不成立。熵 ≤ 0.05 的 token 占 67.2% / 66.0%，D 中位数约 0，但其中 14.7% / 16.0% 满足 D < -1，贡献了全部负 gap 的 44.9% / 47.4%。也就是说，学生很自信而 Teacher 不认可的 token 确实存在，D 本身就对它们给出大幅负值；按熵加权会直接改变这部分 token 的权重。
 - 低熵 token 里有大量模板词（“I need to”、“the”），好的 CoT 里也有，加重惩罚会误伤。
 
 **7.4 假设 (a)（正向 CoT 高熵更值得更新）：判断不了**
 - 样本少：C > 0.01 的步只有 124（SW）/ 50（TWX）。
 - 方向不一致：SW 低 H 更好（合法率 0.84 vs 0.68，成功率 0.49 vs 0.25）；TWX 高 H 略好。
-- D 本来就集中在高熵 token 上，w 取常数时更新也会落在那里；再按熵加权是在同一位置加码。
+- 高熵 token 的单 token D 更负，w 取常数时它们的更新已经最大；再按熵加权是在同一位置加码。但按总量算，熵 > 0.5 的 token 只贡献约 27% 的负 gap。
 - 外部参考：数学推理 RLVR 中只更新少数高熵 token 效果不差（Wang et al. 2025, *Beyond the 80/20 Rule*），但那是结果奖励 RL，不是 OPD，也不是长程 agent。
 
 **7.5 建议拿去训练对比的初步形式**
@@ -214,14 +214,14 @@ $$
 
 - g(I_t) ∈ [0, 1]，随 I 增大：CoT 起作用的步才把 RL 的功过记到 CoT 上。
 - A_t 给好坏的符号；D_{t,i} 给逐 token 方向，永不翻转。
-- 熵先不加。要检验两条熵假设，应把熵乘在 RL 项上做对比，因为 OPD 项本来就碰不到低熵 token。
+- 熵先不加。要检验两条熵假设，分别把熵乘在 RL 项和 OPD 项上做消融。
 
 **7.6 要定下 f 还缺什么**
 1. 训练对比：f 取 1、g(I)、g(I)×熵递增、g(I)×熵递减等几种写法。
 2. 更好的 A_t：critic 或 MC rollout，替换 G3 代理。
 3. 可信的 Teacher：先做“保留历史 Thought 格式、内容换成中性句”的对照（排除 Teacher 只看到 `Action:` 历史造成的格式偏移），再上 32B 强 Teacher。
 4. E14 人工盲标，确认 I_t 在人看来量的是什么。
-5. token 级直接检验：需要读 `token_stats.parquet`（见 §8 的 pyarrow 版本问题）。
+5. token 级检验已部分完成（§7.3 的更正，按熵分段的表见报告表 4）；还没做按 C 的符号分组的 token 级对比。读 `token_stats.parquet` 需要较新的 pyarrow（见 §8）。
 
 ## 8. 已知局限
 
@@ -230,13 +230,13 @@ $$
 - 所有图表都包含打转步（见 §5.4）。
 - Fig02、Fig08、Fig10 的趋势，以及 Fig06 里的“约 80%”，是看图读出的，没有单独出数。
 - E14 人工盲标还没做，所以 I_t 和人工判断的一致性还没有验证。
-- `results/experiment_report.html`（由 `scripts/06_build_html_report.py` 生成，结论文字硬编码在脚本里）已于 2026-11-19 核对。基础数值和表格一致，但有几处解读站不住：
+- 旧报告 `results/experiment_report.html` 在 2026-11-19 的核对中发现几处解读站不住：
   - 头条“报错后自救步 I_t 暴涨”的倍数主要来自打转步，TWX 去掉打转步后不显著。
   - TWX“I≤0 成功率高”主要是任务构成造成的（I≤0 的步有 46% 来自 mapreader）。
   - E15“低熵麻木”和步数深度混在一起，TWX 不显著。
   - test-conductivity s16 案例写的 D_self=-1.78，和数据（-0.87）不符。
-  - 重新生成报告需要读取 parquet 文件，而本地 pyarrow 19 读不了服务器上 pyarrow 26 写出的文件（报错 `Repetition level histogram size mismatch`）。在服务器环境或装较新 pyarrow 的环境里读。
-  - 报告正文尚未按上述核对结果修改。
+- 2026-11-20 已重写报告：`scripts/06_build_html_report.py` 生成仓库根目录的 `index.html`，公式用 KaTeX（`assets/katex/`，本地 vendored）渲染，图片按相对路径引用 `results/*/figures`。上面几条都已在新报告中改正，旧文件已删除。
+  - 生成报告需要读取 parquet：本地 pyarrow 19 读不了服务器上 pyarrow 26 写出的文件（报错 `Repetition level histogram size mismatch`）。可用 `uv venv` 建一个装有 `pyarrow>=21 pandas numpy scipy` 的环境运行脚本。
 
 ## 9. 待办
 
@@ -248,9 +248,8 @@ $$
 - [ ] **待决定**：是否把“去掉打转步”的对照版并进 `scripts/03_analyze_and_plot.py` 的表和图里。
 - [ ] **可选**：mapreader 换更难的参数后重跑（目前 20/20 饱和）。
 - [ ] **可选**：开 Qwen3-32B strong teacher（`02_score_offline.py --run-strong-teacher`）补 E18。
-- [ ] **待决定**：是否按 §8 的核对结果修改 `scripts/06_build_html_report.py` 里硬编码的结论文字并重新生成报告。
 - [ ] **建议**：加“格式保留、内容中性”的对照 Teacher（§7.6 第 3 条），需要 GPU。
-- [ ] **建议**：把 §5.4 / §7 / §8 用到的临时分析写成入库脚本，方便复现。
+- [ ] **建议**：把 §5.4 去打转后的相关系数写成入库脚本（§7 和报错后转移表已入库）。
 
 ## 10. 文件索引
 
@@ -258,6 +257,6 @@ $$
 - `data/*_smoke/`：E01 v2（接口说明书 prompt）；`data/*_smoke_v1/`：E01 v1（旧 prompt）
 - `results/*_full/`：`figures/Fig01-Fig10`、`tables/*.csv`、`report_summary.md`、`e14_blind_to_label.csv`
 - `results/cross_benchmark/`：`cross_benchmark_comparison.md`、`Fig_cross_benchmark_overview.png`、两个 csv
-- `results/experiment_report.html`：交互式总报告（单文件，浏览器直接打开；解读问题见 §8）
+- `index.html`：交互式报告（由 `scripts/06_build_html_report.py` 生成；在线：https://heyxingxing.github.io/cot-action-diag/ ；本地需在仓库目录内打开，依赖 `results/*/figures` 和 `assets/katex/`）
 - `docs/experiment_plan_qwen3_8b.md`：实验手册（E01–E18 定义、零样本规则）；`docs/cot_action_overview_same_tasks_v2.pdf`：诊断任务设计总览
 - `logs/full_log.txt`：全量运行日志；`logs/e01_v2_log.txt`：E01 v2 日志

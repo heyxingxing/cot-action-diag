@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
 """
-生成单文件、零外链、可离线直接双击打开的团队汇报 HTML 实验网站：
-  results/experiment_report.html
+Build the interactive experiment report as `index.html` at the repository root.
 
-包含 5 个交互标签页：
-1. 核心结论总览（KPI + 5 大发现 + 报错自救对比 SVG + RL 拍板建议 + 明星案例一键跳转）
-2. 可视化图表分析（全 21 张 300DPI 高清图，支持双 Bench 左右并排对比 + 每图精准图解 + 全屏放大灯箱 + E09/E11/E16 交互表）
-3. 交互式全量轨迹浏览器（120 局 / 3,299 步 + 全轨迹 SVG 演变折线图 + 逐 Token 精确熵/Teacher Gap 热力图）
-4. 精选典型案例剖析（5 大核心现象 × 双 Bench 真实切片，组会直接投屏讲）
-5. 实验配置与 E01–E18 完成状态追溯
+The page is served by GitHub Pages from the repository root
+(https://heyxingxing.github.io/cot-action-diag/). Figures (`results/*/figures`) and
+KaTeX (`assets/katex`) are referenced by relative path, so the page works inside the
+repository layout only (opened locally via file:// or served by Pages). Episode, turn
+and token data are embedded as JSON.
+
+Sections: summary and definitions, figures and tables, trajectory explorer,
+case studies, setup and the E01-E18 checklist.
+
+Reading `token_stats.parquet` needs a recent pyarrow (the files were written by
+pyarrow 26; pyarrow 19 fails with "Repetition level histogram size mismatch").
 """
 
 from __future__ import annotations
 
-import base64
-import html
+import datetime as dt
 import json
 from pathlib import Path
 from typing import Any, Dict, List
@@ -26,14 +29,17 @@ from scipy import stats
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 RES_DIR = ROOT / "results"
-OUT_HTML = RES_DIR / "experiment_report.html"
+OUT_HTML = ROOT / "index.html"
+
+BOOT_B = 2000
+BOOT_SEED = 0
+# |C_t| below this is treated as "CoT had no effect" in the f(C, H) analysis.
+C_EPS = 0.01
+ENTROPY_BINS = [(-np.inf, 0.05, "≤ 0.05"), (0.05, 0.2, "0.05–0.2"), (0.2, 0.5, "0.2–0.5"), (0.5, 1.0, "0.5–1"), (1.0, np.inf, "> 1")]
 
 
-def b64_png(path: Path) -> str:
-    if not path.exists():
-        return ""
-    raw = path.read_bytes()
-    return "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
+def rel(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix() if path.exists() else ""
 
 
 def load_jsonl(path: Path) -> List[Dict[str, Any]]:
@@ -41,7 +47,33 @@ def load_jsonl(path: Path) -> List[Dict[str, Any]]:
         return [json.loads(line) for line in f if line.strip()]
 
 
-def build_benchmark_bundle(bench_key: str, folder: str, label: str) -> Dict[str, Any]:
+def rnd(x: Any, nd: int) -> Any:
+    x = float(x)
+    return round(x, nd) if np.isfinite(x) else None
+
+
+def cluster_ratio_ci(df: pd.DataFrame, num: pd.Series, den: pd.Series, col: str, rng: np.random.Generator) -> List[Any]:
+    """Point estimate and episode-cluster bootstrap 95% CI of mean(col | num) / mean(col | den)."""
+    uniq, inv = np.unique(df["episode_id"].to_numpy(), return_inverse=True)
+    vals = np.nan_to_num(df[col].to_numpy(float))
+
+    def per_episode(mask: pd.Series):
+        m = mask.to_numpy(bool)
+        s = np.bincount(inv, weights=np.where(m, vals, 0.0), minlength=len(uniq))
+        n = np.bincount(inv, weights=m.astype(float), minlength=len(uniq))
+        return s, n
+
+    s1, n1 = per_episode(num)
+    s0, n0 = per_episode(den)
+    idx = rng.integers(0, len(uniq), size=(BOOT_B, len(uniq)))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratios = (s1[idx].sum(1) / n1[idx].sum(1)) / (s0[idx].sum(1) / n0[idx].sum(1))
+    point = (s1.sum() / n1.sum()) / (s0.sum() / n0.sum())
+    lo, hi = np.nanpercentile(ratios, [2.5, 97.5])
+    return [rnd(point, 2), rnd(lo, 2), rnd(hi, 2)]
+
+
+def build_benchmark_bundle(bench_key: str, folder: str, label: str, rng: np.random.Generator) -> Dict[str, Any]:
     ddir = DATA_DIR / folder
     rdir = RES_DIR / folder
     eps = load_jsonl(ddir / "episodes.jsonl")
@@ -53,41 +85,35 @@ def build_benchmark_bundle(bench_key: str, folder: str, label: str) -> Dict[str,
     t_df = pd.DataFrame(turns)[
         ["episode_id", "turn_id", "observation", "next_observation", "cot", "action", "parse_error_type", "truncated"]
     ]
-    tm_df = pd.DataFrame(tms)
-    df = tm_df.merge(t_df, on=["episode_id", "turn_id"], how="left")
+    df = pd.DataFrame(tms).merge(t_df, on=["episode_id", "turn_id"], how="left")
     df = df.sort_values(["episode_id", "turn_id"]).reset_index(drop=True)
     df["prev_valid"] = df.groupby("episode_id")["action_valid"].shift(1)
     df["prev_action"] = df.groupby("episode_id")["action"].shift(1)
+    # Loop turn: the previous action was invalid and is repeated verbatim.
+    df["loop"] = (df["action"] == df["prev_action"]) & (df["prev_valid"] == False)  # noqa: E712
+    df["C"] = df["A_turn_proxy"] * df["I_empty_norm"]
 
-    # Group CoT token stats by (episode_id, turn_id) into compact arrays: [text, entropy, logp_s, d_self]
+    # CoT token stats grouped per turn into compact arrays: [text, entropy, logp_s, d_self]
     cot_tok = tok_df[tok_df["segment"] == "cot"].copy()
     cot_tok["d_self"] = cot_tok["logp_teacher_self"] - cot_tok["logp_student"]
     tok_map: Dict[tuple, List[List[Any]]] = {}
     for (eid, tid), grp in cot_tok.groupby(["episode_id", "turn_id"], sort=False):
         grp = grp.sort_values("token_pos")
-        arr = []
-        for txt, ent, lps, ds in zip(
-            grp["token_text"].tolist(),
-            grp["entropy_nats"].tolist(),
-            grp["logp_student"].tolist(),
-            grp["d_self"].tolist(),
-        ):
-            arr.append(
-                [
-                    str(txt),
-                    round(float(ent), 3) if pd.notna(ent) else 0.0,
-                    round(float(lps), 3) if pd.notna(lps) else 0.0,
-                    round(float(ds), 3) if pd.notna(ds) else None,
-                ]
-            )
-        tok_map[(str(eid), int(tid))] = arr
+        tok_map[(str(eid), int(tid))] = [
+            [
+                str(txt),
+                round(float(ent), 3) if pd.notna(ent) else 0.0,
+                round(float(lps), 3) if pd.notna(lps) else 0.0,
+                round(float(ds), 3) if pd.notna(ds) else None,
+            ]
+            for txt, ent, lps, ds in zip(grp["token_text"], grp["entropy_nats"], grp["logp_student"], grp["d_self"])
+        ]
 
-    # Compute per-task stats + within-task correlations
+    # Per-task stats + within-task correlations
     task_stats = []
     for (tier, tid), g_ep in ep_df.groupby(["difficulty_tier", "task_id"]):
         g_t = df[df["task_id"] == tid]
         r_ir = stats.spearmanr(g_t["I_empty_norm"], g_t["reward_raw"], nan_policy="omit")[0]
-        r_iv = stats.spearmanr(g_t["I_empty_norm"], g_t["action_valid"].astype(float), nan_policy="omit")[0]
         r_hhv = stats.spearmanr(g_t["H_C_head_mean"], g_t["action_valid"].astype(float), nan_policy="omit")[0]
         task_stats.append(
             {
@@ -98,69 +124,115 @@ def build_benchmark_bundle(bench_key: str, folder: str, label: str) -> Dict[str,
                 "n_turn": int(len(g_t)),
                 "succ_pct": round(float(g_ep["terminal_success"].mean()) * 100, 1),
                 "score_mean": round(float(g_ep["final_score_norm"].mean()), 3),
-                "turns_mean": round(float(g_ep["num_turns"].mean()), 1),
                 "valid_pct": round(float(g_t["action_valid"].mean()) * 100, 1),
                 "I_med": round(float(g_t["I_empty_norm"].median()), 4),
-                "I_mean": round(float(g_t["I_empty_norm"].mean()), 3),
-                "rho_I_r": round(float(r_ir), 3) if np.isfinite(r_ir) else None,
-                "rho_I_valid": round(float(r_iv), 3) if np.isfinite(r_iv) else None,
-                "rho_Hhead_valid": round(float(r_hhv), 3) if np.isfinite(r_hhv) else None,
+                "rho_I_r": rnd(r_ir, 3),
+                "rho_Hhead_valid": rnd(r_hhv, 3),
             }
         )
 
-    # Error-recovery 2x2 breakdown: (prev_valid, action_valid)
+    # Transitions conditioned on the previous step's validity; F->F is split into loops and new actions.
+    pv, av = df["prev_valid"], df["action_valid"].astype(bool)
+    masks = {
+        "FF": (pv == False) & ~av,  # noqa: E712
+        "FT": (pv == False) & av,  # noqa: E712
+        "TF": (pv == True) & ~av,  # noqa: E712
+        "TT": (pv == True) & av,  # noqa: E712
+    }
+    masks["FF_loop"] = masks["FF"] & df["loop"]
+    masks["FF_new"] = masks["FF"] & ~df["loop"]
     rec_rows = []
-    sub_pv = df.dropna(subset=["prev_valid"])
-    for pv, av, tag in [
-        (False, False, "报错后继续错 (F→F)"),
-        (False, True, "报错后成功自救 (F→T)"),
-        (True, False, "正常后突然出错 (T→F)"),
-        (True, True, "连续正常推进 (T→T)"),
-    ]:
-        g = sub_pv[(sub_pv["prev_valid"] == pv) & (sub_pv["action_valid"] == av)]
+    for key in ["FF", "FF_loop", "FF_new", "FT", "TF", "TT"]:
+        g = df[masks[key]]
         rec_rows.append(
             {
-                "tag": tag,
-                "pv": bool(pv),
-                "av": bool(av),
+                "key": key,
                 "n": int(len(g)),
-                "I_mean": round(float(g["I_empty_norm"].mean()), 3) if len(g) else 0.0,
-                "I_med": round(float(g["I_empty_norm"].median()), 4) if len(g) else 0.0,
-                "H_head": round(float(g["H_C_head_mean"].mean()), 3) if len(g) else 0.0,
-                "H_mid": round(float(g["H_C_mid_mean"].mean()), 3) if len(g) else 0.0,
-                "H_tail": round(float(g["H_C_tail_mean"].mean()), 3) if len(g) else 0.0,
-                "G5s_mean": round(float(g["G5_strict"].mean()), 3) if len(g) else 0.0,
+                "I_mean": rnd(g["I_empty_norm"].mean(), 3),
+                "I_med": rnd(g["I_empty_norm"].median(), 4),
+                "H_head": rnd(g["H_C_head_mean"].mean(), 3),
+                "H_tail": rnd(g["H_C_tail_mean"].mean(), 3),
+            }
+        )
+    rec_ci = {
+        "FT_vs_FF": cluster_ratio_ci(df, masks["FT"], masks["FF"], "I_empty_norm", rng),
+        "FT_vs_FF_new": cluster_ratio_ci(df, masks["FT"], masks["FF_new"], "I_empty_norm", rng),
+    }
+
+    # w = f(C, H) analysis: groups by sign of C_t and by H^C relative to the task median.
+    C = df["C"]
+    nz = C != 0
+    high_h = df["H_C_mean"] > df.groupby("task_id")["H_C_mean"].transform("median")
+    groups = []
+    for c_key, c_mask in [("pos", C > C_EPS), ("neg", C < -C_EPS)]:
+        for h_key, h_mask in [("high", high_h), ("low", ~high_h)]:
+            g = df[c_mask & h_mask]
+            groups.append(
+                {
+                    "c": c_key,
+                    "h": h_key,
+                    "n": int(len(g)),
+                    "valid": rnd(g["action_valid"].mean(), 2),
+                    "G3s": rnd(g["G3_strict"].mean(), 3),
+                    "succ": rnd(g["terminal_success"].mean(), 2),
+                    "loop": rnd(g["loop"].mean(), 2),
+                    "D": rnd(g["D_self_mean"].mean(), 2),
+                }
+            )
+    inv_df = df[~av]
+    low_q = inv_df["H_C_mean"] <= inv_df["H_C_mean"].quantile(0.25)
+
+    d, h = cot_tok["d_self"], cot_tok["entropy_nats"]
+    neg_mass = float((-d.clip(upper=0)).sum())
+    token_bins = []
+    for lo, hi, lbl in ENTROPY_BINS:
+        sel = (h > lo) & (h <= hi)
+        db = d[sel]
+        token_bins.append(
+            {
+                "label": lbl,
+                "share": rnd(sel.mean() * 100, 1),
+                "d_med": rnd(db.median(), 3),
+                "d_p10": rnd(db.quantile(0.1), 2),
+                "lt_m1": rnd((db < -1).mean() * 100, 1),
+                "neg_mass": rnd(float((-db.clip(upper=0)).sum()) / neg_mass * 100, 1),
             }
         )
 
-    # Decomposition stats
-    lp_cot = df["logp_a_with_cot"] / df["action_token_len"].clip(lower=1)
-    lp_emp = df["logp_a_empty"] / df["action_token_len"].clip(lower=1)
-    lp_neu = df["logp_a_neutral"] / df["action_token_len"].clip(lower=1)
-    rho_surp_emp = float(stats.spearmanr(df["I_empty_norm"], -lp_emp, nan_policy="omit")[0])
-    rho_surp_neu = float(stats.spearmanr(df["I_neutral_norm"], -lp_neu, nan_policy="omit")[0])
+    def _turn_corr(g: pd.DataFrame) -> float:
+        if len(g) < 3 or g["d_self"].std() == 0 or g["entropy_nats"].std() == 0:
+            return np.nan
+        return float(np.corrcoef(g["d_self"], g["entropy_nats"])[0, 1])
 
-    # Sign conflict in C_proxy < 0
-    c_px = df["A_turn_proxy"] * df["I_empty_norm"]
-    neg_c = df[c_px < 0]
-    dbl_neg_pct = round(float(neg_c["D_self_neg_frac"].mean()) * 100, 1) if len(neg_c) else 0.0
+    turn_corr = cot_tok.groupby(["episode_id", "turn_id"])[["d_self", "entropy_nats"]].apply(_turn_corr).dropna()
 
-    # E13 agreement
-    both_i = df[["I_empty_norm", "I_neutral_norm"]].dropna()
-    e13_rho = round(float(stats.spearmanr(both_i["I_empty_norm"], both_i["I_neutral_norm"])[0]), 3)
-    e13_sign = round(float(np.mean((both_i["I_empty_norm"] > 0) == (both_i["I_neutral_norm"] > 0))) * 100, 1)
+    fch = {
+        "C_neg_pct": rnd((C < 0).mean() * 100, 1),
+        "C_small_pct": rnd((C.abs() < C_EPS).mean() * 100, 1),
+        "sign_agree_pct": rnd((np.sign(C[nz]) == np.sign(df.loc[nz, "A_turn_proxy"])).mean() * 100, 1),
+        "groups": groups,
+        "loop_lowH_invalid_pct": rnd(inv_df[low_q]["loop"].mean() * 100, 0),
+        "loop_other_invalid_pct": rnd(inv_df[~low_q]["loop"].mean() * 100, 0),
+        "token_d_median": rnd(d.median(), 4),
+        "turn_corr_mean": rnd(turn_corr.mean(), 3),
+        "turn_corr_neg_pct": rnd((turn_corr < 0).mean() * 100, 1),
+        "token_bins": token_bins,
+    }
 
-    # Compact episodes + turns payload for interactive explorer (ALL 60 episodes!)
+    # Episodes + turns payload for the trajectory explorer
     ep_payload = []
     ep_meta_map = {e["episode_id"]: e for e in eps}
     for eid, g in df.groupby("episode_id", sort=True):
         meta = ep_meta_map[eid]
         g = g.sort_values("turn_id")
-        n_rec = int(((g["prev_valid"] == False) & (g["action_valid"] == True)).sum())  # noqa: E712
         turns_list = []
         for _, r in g.iterrows():
             tid = int(r["turn_id"])
             act_len = max(1, int(r["action_token_len"]))
+
+            def opt(col: str, nd: int, scale: float = 1.0) -> Any:
+                return round(float(r[col]) / scale, nd) if pd.notna(r[col]) else None
+
             turns_list.append(
                 {
                     "t": tid,
@@ -169,21 +241,20 @@ def build_benchmark_bundle(bench_key: str, folder: str, label: str) -> Dict[str,
                     "act": str(r["action"]),
                     "valid": bool(r["action_valid"]),
                     "pv": None if pd.isna(r["prev_valid"]) else bool(r["prev_valid"]),
+                    "lp": bool(r["loop"]),
                     "r": round(float(r["reward_raw"]), 3),
                     "g3": round(float(r["G3_strict"]), 3),
-                    "g5": round(float(r["G5_strict"]), 3),
                     "sc": round(float(r["score_norm"]), 3),
-                    "ie": round(float(r["I_empty_norm"]), 4) if pd.notna(r["I_empty_norm"]) else None,
-                    "in": round(float(r["I_neutral_norm"]), 4) if pd.notna(r["I_neutral_norm"]) else None,
-                    "hc": round(float(r["H_C_mean"]), 4) if pd.notna(r["H_C_mean"]) else None,
-                    "hh": round(float(r["H_C_head_mean"]), 4) if pd.notna(r["H_C_head_mean"]) else None,
-                    "ht": round(float(r["H_C_tail_mean"]), 4) if pd.notna(r["H_C_tail_mean"]) else None,
-                    "ha": round(float(r["H_A_mean"]), 4) if pd.notna(r["H_A_mean"]) else None,
-                    "ds": round(float(r["D_self_mean"]), 3) if pd.notna(r["D_self_mean"]) else None,
-                    "dnf": round(float(r["D_self_neg_frac"]), 3) if pd.notna(r["D_self_neg_frac"]) else None,
-                    "apx": round(float(r["A_turn_proxy"]), 3) if pd.notna(r["A_turn_proxy"]) else None,
-                    "lpc": round(float(r["logp_a_with_cot"]) / act_len, 4) if pd.notna(r["logp_a_with_cot"]) else None,
-                    "lpe": round(float(r["logp_a_empty"]) / act_len, 4) if pd.notna(r["logp_a_empty"]) else None,
+                    "ie": opt("I_empty_norm", 4),
+                    "in": opt("I_neutral_norm", 4),
+                    "hc": opt("H_C_mean", 4),
+                    "hh": opt("H_C_head_mean", 4),
+                    "ht": opt("H_C_tail_mean", 4),
+                    "ha": opt("H_A_mean", 4),
+                    "ds": opt("D_self_mean", 3),
+                    "dnf": opt("D_self_neg_frac", 3),
+                    "lpc": opt("logp_a_with_cot", 4, act_len),
+                    "lpe": opt("logp_a_empty", 4, act_len),
                     "cat": str(r["zero_reward_category"]),
                     "toks": tok_map.get((str(eid), tid), []),
                 }
@@ -201,1514 +272,1225 @@ def build_benchmark_bundle(bench_key: str, folder: str, label: str) -> Dict[str,
                 "n_turns": int(meta["num_turns"]),
                 "inv": int(meta["invalid_action_count"]),
                 "term": str(meta["termination_reason"]),
-                "n_rec": n_rec,
+                "n_rec": int(masks["FT"][g.index].sum()),
                 "turns": turns_list,
             }
         )
 
-    # Load CSV tables
     tables = {}
-    for tname in [
-        "summary_stats",
-        "e09_correlations",
-        "e10_quadrants",
-        "e10_leak_free_cv",
-        "e11_zero_reward",
-        "e16_controlled_regression",
-    ]:
+    for tname in ["e11_zero_reward", "e16_controlled_regression"]:
         p = rdir / "tables" / f"{tname}.csv"
         tables[tname] = pd.read_csv(p).to_dict(orient="records") if p.exists() else []
 
-    # Load all 10 figures as base64
-    fig_files = [
-        ("Fig01", "Fig01_E04_bridge_dist.png"),
-        ("Fig02", "Fig02_E04_E16_bridge_stratified.png"),
-        ("Fig03", "Fig03_E05_E06_entropy_compare.png"),
-        ("Fig04", "Fig04_E07_E11_reward_and_zero_cats.png"),
-        ("Fig05", "Fig05_E09_clustered_correlations.png"),
-        ("Fig06", "Fig06_E10_joint_quadrants.png"),
-        ("Fig07", "Fig07_E13_baseline_robustness.png"),
-        ("Fig08", "Fig08_E15_failure_trajectory.png"),
-        ("Fig09", "Fig09_E17_cot_position_entropy.png"),
-        ("Fig10", "Fig10_E18_teacher_gap.png"),
-    ]
-    figs = {k: b64_png(rdir / "figures" / fn) for k, fn in fig_files}
+    fig_files = {
+        "Fig01": "Fig01_E04_bridge_dist.png",
+        "Fig02": "Fig02_E04_E16_bridge_stratified.png",
+        "Fig03": "Fig03_E05_E06_entropy_compare.png",
+        "Fig04": "Fig04_E07_E11_reward_and_zero_cats.png",
+        "Fig05": "Fig05_E09_clustered_correlations.png",
+        "Fig06": "Fig06_E10_joint_quadrants.png",
+        "Fig07": "Fig07_E13_baseline_robustness.png",
+        "Fig08": "Fig08_E15_failure_trajectory.png",
+        "Fig09": "Fig09_E17_cot_position_entropy.png",
+        "Fig10": "Fig10_E18_teacher_gap.png",
+    }
+    figs = {k: rel(rdir / "figures" / fn) for k, fn in fig_files.items()}
 
+    lp_emp = df["logp_a_empty"] / df["action_token_len"].clip(lower=1)
+    both_i = df[["I_empty_norm", "I_neutral_norm"]].dropna()
+    c_neg = df[C < 0]
     overview = {
-        "bench": bench_key,
         "label": label,
         "n_ep": int(len(ep_df)),
         "n_turn": int(len(df)),
         "avg_turns": round(float(ep_df["num_turns"].mean()), 1),
         "parse_pct": round(float(df["parse_ok"].mean()) * 100, 1),
-        "valid_pct": round(float(df["action_valid"].mean()) * 100, 1),
+        "valid_pct": round(float(av.mean()) * 100, 1),
         "succ_pct": round(float(ep_df["terminal_success"].mean()) * 100, 1),
         "score_mean": round(float(ep_df["final_score_norm"].mean()), 3),
         "r_pos_pct": round(float((df["reward_raw"] > 0).mean()) * 100, 1),
         "r_zero_pct": round(float((df["reward_raw"] == 0).mean()) * 100, 1),
-        "r_neg_pct": round(float((df["reward_raw"] < 0).mean()) * 100, 1),
+        "loop_pct": round(float(df["loop"].mean()) * 100, 1),
         "I_emp_mean": round(float(df["I_empty_norm"].mean()), 3),
         "I_emp_p50": round(float(df["I_empty_norm"].median()), 4),
-        "I_emp_p90": round(float(df["I_empty_norm"].quantile(0.9)), 3),
+        "I_emp_p90": round(float(df["I_empty_norm"].quantile(0.9)), 2),
         "I_emp_pos_pct": round(float((df["I_empty_norm"] > 0).mean()) * 100, 1),
         "I_emp_neg_pct": round(float((df["I_empty_norm"] < 0).mean()) * 100, 1),
-        "I_neu_mean": round(float(df["I_neutral_norm"].mean()), 3),
-        "I_neu_p50": round(float(df["I_neutral_norm"].median()), 4),
-        "e13_rho": e13_rho,
-        "e13_sign_pct": e13_sign,
-        "H_C_mean": round(float(df["H_C_mean"].mean()), 4),
-        "H_C_p90": round(float(df["H_C_p90"].mean()), 4),
-        "H_A_mean": round(float(df["H_A_mean"].mean()), 4),
-        "D_self_mean": round(float(df["D_self_mean"].mean()), 3),
-        "D_self_pos_pct": round(float((df["D_self_mean"] > 0).mean()) * 100, 1),
-        "dbl_neg_pct": dbl_neg_pct,
-        "neg_C_turns": int(len(neg_c)),
-        "lp_cot_p50": round(float(lp_cot.median()), 4),
-        "rho_surp_emp": round(rho_surp_emp, 4),
-        "rho_surp_neu": round(rho_surp_neu, 4),
+        "e13_rho": round(float(stats.spearmanr(both_i["I_empty_norm"], both_i["I_neutral_norm"])[0]), 3),
+        "e13_sign_pct": round(float(np.mean((both_i["I_empty_norm"] > 0) == (both_i["I_neutral_norm"] > 0))) * 100, 1),
+        "H_C_mean": round(float(df["H_C_mean"].mean()), 3),
+        "H_A_mean": round(float(df["H_A_mean"].mean()), 3),
+        "H_A_zero_pct": round(float((df["H_A_mean"] == 0).mean()) * 100, 1),
+        "D_self_mean": round(float(df["D_self_mean"].mean()), 2),
+        "D_neg_pct": round(float((df["D_self_mean"] < 0).mean()) * 100, 1),
+        "rho_D_turn": round(float(stats.spearmanr(df["D_self_mean"], df["turn_id"], nan_policy="omit")[0]), 3),
+        "negfrac_Cneg": round(float(c_neg["D_self_neg_frac"].mean()) * 100, 1),
+        "negfrac_all": round(float(df["D_self_neg_frac"].mean()) * 100, 1),
+        "rho_surp_emp": round(float(stats.spearmanr(df["I_empty_norm"], -lp_emp, nan_policy="omit")[0]), 3),
         "r_pos_I_med": round(float(df[df["reward_raw"] > 0]["I_empty_norm"].median()), 4),
-        "r_zero_I_med": round(float(df[df["reward_raw"] == 0]["I_empty_norm"].median()), 4),
     }
 
     return {
         "overview": overview,
         "tasks": task_stats,
         "recovery": rec_rows,
+        "recovery_ci": rec_ci,
+        "fch": fch,
         "tables": tables,
         "figures": figs,
         "episodes": ep_payload,
     }
 
 
+# Curated case studies (episode_id / turn_id pairs and numbers checked against the data).
+CURATED_CASES = [
+    {
+        "tag": "奖励与 $I_t$ 错位",
+        "title": r"TextWorldExpress coin #1000，第 18–19 步：带来收益的转向步 $r_t=0$，拿到奖励的步 $I_t=0$",
+        "episode_id": "textworld_express__coin__s1000",
+        "turns": [18, 19],
+        "mode": "entropy",
+        "analysis": (
+            r"第 17 步 <code>open dishwasher</code> 报错后，第 18 步 CoT 改为去其他房间寻找，执行 <code>move south</code>："
+            r"$r_t=0$，$I_t=5.39$（无 Thought 时该动作的概率约 $2\times10^{-5}$）。"
+            r"第 19 步进入客厅后执行 <code>take coin</code>，得到 $r_t=+1$，但 $I_t=0$：不写 Thought 模型也会选这个动作。"
+            r"若按 $r_t\cdot I_t$ 分配信号，两步都得到 0；只有按未来收益 $G^{(k)}_t$ 分配，第 18 步才能得到功劳。"
+        ),
+    },
+    {
+        "tag": "报错后换路线（F→T）",
+        "title": r"ScienceWorld find-living-thing #5，第 10–11 步：报错后改走走廊，$I_t=3.83$",
+        "episode_id": "scienceworld__find-living-thing__s5",
+        "turns": [10, 11],
+        "mode": "entropy",
+        "analysis": (
+            r"第 10 步 <code>go to kitchen</code> 不合法（当前房间与厨房不相邻）。第 11 步 CoT 推断需要先确认相连的房间，"
+            r"执行 <code>go to hallway</code>（$I_t=3.83$），此后 5 步内 $G^{(5)}_t=25$。"
+            r"这是 F→T 中 $I_t$ 大且后续有收益的例子；但 SW 的 F→T 步 $I_t$ 中位数只有 0.017，这类步并不普遍。"
+        ),
+    },
+    {
+        "tag": "低熵的重复错误",
+        "title": r"ScienceWorld chemistry-mix-paint #6，第 13–14 步：$\bar H^C_t=0.002$ nats 下重复同一不合法动作",
+        "episode_id": "scienceworld__chemistry-mix-paint-secondary-color__s6",
+        "turns": [13, 14],
+        "mode": "entropy",
+        "analysis": (
+            r"第 12–14 步 CoT 逐字相同（“The correct command is open door to bee hive.”），三次执行同一个不合法动作，"
+            r"第 14 步 $\bar H^C_t=0.002$ nats、$I_t=0.002$。TextWorldExpress coin #1018 第 13–15 步类似但不是打转："
+            r"CoT 先指出上一个对象不是门，随后仍对另一个非门对象执行 <code>open</code>（第 14 步 $\bar H^C_t=0.0035$）。"
+            r"不合法步中熵最低的四分之一里，打转步占 84%（SW）/ 46%（TWX），其余不合法步中为 50% / 33%。"
+        ),
+    },
+    {
+        "tag": "获得奖励的步 $I_t\\approx 0$",
+        "title": r"ScienceWorld test-conductivity #3，第 16 步：+50 分的动作，$I_t=0$",
+        "episode_id": "scienceworld__test-conductivity__s3",
+        "turns": [16],
+        "mode": "entropy",
+        "analysis": (
+            r"目标物体已在视野中，<code>focus on aluminum foil</code> 获得 +50 分。有无 Thought 时该动作的对数概率都接近 0，"
+            r"因此 $I_t=0$。两个环境中 $r_t>0$ 的步，$I_t$ 中位数都约为 0，这是 $I_t$ 与即时奖励负相关的主要来源之一。"
+        ),
+    },
+    {
+        "tag": "$I_t$ 最大值",
+        "title": r"TextWorldExpress cookingworld #1007，第 25 步：TWX 中最大的 $I_t=20.78$",
+        "episode_id": "textworld_express__cookingworld__s1007",
+        "turns": [25],
+        "mode": "entropy",
+        "analysis": (
+            r"烤完鸡翅后，CoT 按菜谱转向切苹果，判断苹果可能在台面上，执行 <code>examine counter</code>。"
+            r"下一步发现台面上没有苹果；该局最终超时失败，E11 因而把这一步归为“瞎逛”。"
+            r"这一步的 CoT 是目标导向的：$I_t$ 大只说明 CoT 显著改变了动作分布，不说明这一步是好是坏。"
+        ),
+    },
+    {
+        "tag": "$C_t<0$ 与 $D<0$ 的符号冲突",
+        "title": r"ScienceWorld test-conductivity #16，第 28 步：$C_t<0$，$\bar D^{\mathrm{self}}_t=-0.87$",
+        "episode_id": "scienceworld__test-conductivity__s16",
+        "turns": [28],
+        "mode": "dself",
+        "analysis": (
+            r"该步 $\hat A_t=-0.197$、$I_t=15.4$，故 $C_t<0$。$\bar D^{\mathrm{self}}_t=-0.866$，56% 的 CoT token 满足 $D<0$，"
+            r"但 token 级中位数约为 0：负 gap 集中在少数 token 上（下方按 $D$ 着色）。"
+            r"若 $w_{t,i}$ 随 $C_t$ 取负号，$w_{t,i}D_{t,i}$ 会把这些 token 的更新方向反转。"
+        ),
+    },
+]
+
+# Figure captions. Numbers marked "读图" are read off the figure, the rest come from results/*/tables.
+FIG_CATALOG = [
+    {
+        "key": "Fig01",
+        "e_tag": "E04",
+        "title": r"$I_t$ 的分布",
+        "sw_note": r"均值 0.84，中位数 0.005，P90 2.94；93.8% 的步 $I_t>0$。",
+        "tw_note": r"均值 1.29，中位数 0.027，P90 4.53；92.6% 的步 $I_t>0$。",
+        "takeaway": r"$I_t$ 高度右偏：多数步接近 0，少数步很大；$I_t<0$ 的步很少，幅度也小。",
+    },
+    {
+        "key": "Fig02",
+        "e_tag": "E04 / E16",
+        "title": r"$I_t$ 按任务、步数与动作长度分层",
+        "sw_note": r"开局前几步 $I_t$ 较高，随步数下降；短动作的 $I_t$ 方差更大（读图）。",
+        "tw_note": r"任务内 $I_t$ 中位数：coin 0.107，cookingworld 0.036，mapreader 0。",
+        "takeaway": r"$I_t$ 随任务和步数变化，跨任务合并的相关需要用任务内相关和 E16 回归复核。",
+    },
+    {
+        "key": "Fig03",
+        "e_tag": "E05 / E06",
+        "title": r"CoT 熵 $H^C$ 与动作熵 $H^A$",
+        "sw_note": r"$\bar H^C_t$ 均值 0.153 nats；$\bar H^A_t$ 均值 0.015，57% 的步为 0。",
+        "tw_note": r"$\bar H^C_t$ 均值 0.163 nats；$\bar H^A_t$ 均值 0.026，54% 的步为 0。",
+        "takeaway": r"单步的不确定性主要在 CoT 中；Thought 写完后，动作基本确定。",
+    },
+    {
+        "key": "Fig04",
+        "e_tag": "E07 / E11",
+        "title": r"奖励稀疏度与零奖励步分类",
+        "sw_note": r"92.0% 的步 $r_t=0$。$I_t$ 中位数：瞎逛 0.126，非法 0.006，重复 0.002，有效铺垫 0.0008。",
+        "tw_note": r"94.8% 的步 $r_t=0$。$I_t$ 中位数：瞎逛 0.569，非法 0.075，重复 0.004，有效铺垫 0.0003。",
+        "takeaway": r"两边按 $I_t$ 中位数的排序相同（瞎逛 &gt; 非法 &gt; 重复 &gt; 有效铺垫），按均值的排序不同；$\bar H^C_t$ 在有效铺垫中最低（0.131 / 0.140）。",
+    },
+    {
+        "key": "Fig05",
+        "e_tag": "E09",
+        "title": r"核心指标与结果的相关（episode 聚类 bootstrap，95% CI）",
+        "sw_note": r"$I_t$ 与 $r_t$ 显著负相关（$-0.217$；中性基线 $-0.231$）；$I_t$ 与 $G^{(3)}_t$、$G^{(5)}_t$、成功、合法性均不显著；$\bar H^C_t$ 各项均不显著。",
+        "tw_note": r"$I_t$ 与 $r_t$（$-0.268$）、$G^{(3)}_t$（$-0.210$）、成功（$-0.233$）、合法性（$-0.172$）均显著为负；$\bar H^C_t$ 为弱负相关（$-0.12$ 至 $-0.18$）。",
+        "takeaway": r"两边都显著的只有 $I_t$ 与即时奖励的负相关；其余关系在 TWX 更强。",
+    },
+    {
+        "key": "Fig06",
+        "e_tag": "E10",
+        "title": r"$H^C\times I_t$ 四象限与无泄露预测",
+        "sw_note": r"低 $H^C$ 且 $I_t\le 0$（n=57）：合法率 84%，$G^{(3)}_t$ 均值 13.9；低 $H^C$ 且 $I_t>0$：2.6。预测终局成功的 AUROC：$I_t$ 0.463，$r_t$ 0.621。",
+        "tw_note": r"$I_t\le 0$ 两格的成功率为 60% / 57%，$I_t>0$ 约 22%；但 $I_t\le 0$ 的步有 46% 来自全胜的 mapreader，任务内只有 coin 仍有差异（0.55 vs 0.27，n=22）。",
+        "takeaway": r"预测 $G^{(3)}_t$ 的 5 折 CV $R^2$ 约为 0（$-0.012$ / $0.001$）。$I_t\le 0$ 的步结果较好，部分来自任务构成；SW find-living-thing 任务内仍成立（成功率 0.51 vs 0.26）。",
+    },
+    {
+        "key": "Fig07",
+        "e_tag": "E13",
+        "title": r"无 CoT 基线：空 Thought 与中性 Thought",
+        "sw_note": r"Spearman 0.777，符号一致率 92.2%；$I_t-I^{\mathrm{neu}}_t$ 均值 $-0.101$。",
+        "tw_note": r"Spearman 0.849，符号一致率 87.1%；均值差 $-0.283$。",
+        "takeaway": r"两种基线结论一致，空 Thought 的格式效应很小。",
+    },
+    {
+        "key": "Fig08",
+        "e_tag": "E15",
+        "title": r"失败局结束前 5 步的熵与 $I_t$",
+        "sw_note": r"52 局失败局。$H^C$ 的 P90 从 0.50 [0.43, 0.57] 降到 0.38 [0.30, 0.44]；但全体样本中它本身随步数下降（$\rho=-0.18$），而失败局大多在第 34 步结束，无法与步数深度区分。",
+        "tw_note": r"30 局失败局。$H^C$ 的 P90 依次为 0.51、0.56、0.54、0.56、0.46，置信区间重叠；$I_t$ 在 0.88–1.34 之间波动。",
+        "takeaway": r"没有发现可靠的失败前预警信号。",
+    },
+    {
+        "key": "Fig09",
+        "e_tag": "E17",
+        "title": r"CoT 内部不同位置的熵",
+        "sw_note": r"不合法步的前 1/3 熵更高（0.206 vs 0.137），后 1/3 略低（0.147 vs 0.165）。",
+        "tw_note": r"前 1/3：0.237 vs 0.133。按十分位，不合法步在 10–40% 处更高，60–90% 处略低，末 10% 又更高。",
+        "takeaway": r"前 1/3 熵与合法性的相关（$-0.227$ / $-0.293$）强于整段均值（$-0.038$ / $-0.149$），但它与上一步是否合法的相关更强（$-0.307$ / $-0.366$）；按上一步合法性分层后降至 $-0.08$ 至 $-0.18$。",
+    },
+    {
+        "key": "Fig10",
+        "e_tag": "E18",
+        "title": r"Self-teacher gap $D^{\mathrm{self}}$",
+        "sw_note": r"98.4% 的步均值为负（均值 $-1.12$），随步数加深更负（$\rho=-0.349$）。$C_t<0$ 的步中 $D<0$ 的 token 占 68.4%，全部步为 65.4%。",
+        "tw_note": r"97.9% 为负（均值 $-1.55$，$\rho=-0.276$）。$C_t<0$ 的步中 $D<0$ 的 token 占 65.4%，全部步为 64.1%。",
+        "takeaway": r"token 级 $D$ 的中位数约为 $-0.004$，量级大的负值集中在少数 token（每步 P10 约 $-3$ 至 $-4$）。$D<0$ 并不限于 $C_t<0$ 的步。teacher 上下文中历史轮只保留 Action 行，$D<0$ 可能部分来自格式偏移。",
+    },
+]
+
+
 def main() -> None:
-    print("[HTML Builder] Loading ScienceWorld & TextWorldExpress data + token stats + 21 PNGs...")
-    sw = build_benchmark_bundle("scienceworld", "scienceworld_full", "ScienceWorld")
-    tw = build_benchmark_bundle("textworld_express", "textworld_express_full", "TextWorldExpress")
-    cross_fig = b64_png(RES_DIR / "cross_benchmark" / "Fig_cross_benchmark_overview.png")
-    cross_e09 = pd.read_csv(RES_DIR / "cross_benchmark" / "cross_benchmark_e09.csv").to_dict(orient="records")
-
-    # Curated case studies (verified real episode_id + turn_id pairs!)
-    curated_cases = [
-        {
-            "category": "spotlight",
-            "badge": "头条明星案例 · 一眼看懂信用分配错位",
-            "color": "violet",
-            "title": "TextWorldExpress `coin__s1000` 连续两步（Turn 18 → Turn 19）：真正救命的那步 r=0、I=5.39；摘果子那步 r=+1.0、I=0.000",
-            "episode_id": "textworld_express__coin__s1000",
-            "turns": [18, 19],
-            "analysis": (
-                "这是整批实验里最具代表性的两步对比："
-                "在 <b>Turn 18</b>，模型刚因 <code>open dishwasher</code> 收到环境报错，CoT 立刻反思并切换搜索方向（<code>I_t = 5.39</code>，CoT 开头和尾段熵均高 <code>0.396 / 0.355</code>），执行 <code>move south</code> 进入客厅——<b>这一步真正靠 CoT 救活了整局，但当下奖励 r=0！</b>"
-                "到了 <b>Turn 19</b>，进入客厅一眼看见硬币，模型执行显而易见的 <code>take coin</code> 直接拿到 <b>r=+1.0 通关</b>，但因为不写 CoT 也会捡眼前硬币，这一步 <b>I_t = 0.0000、H_A = 0.0000</b>。"
-                "如果粗暴用 <code>r_t × I_t</code> 给 CoT 分配信号，这两步的乘积竟然<b>都是 0</b>！"
-            ),
-        },
-        {
-            "category": "recovery",
-            "badge": "💡 报错后成功自救 (False → True)",
-            "color": "emerald",
-            "title": "ScienceWorld `find-living-thing__s5` (Turn 11)：报错后靠 CoT 重规划路线，I_t=3.83，随后 5 步拿 +25 分",
-            "episode_id": "scienceworld__find-living-thing__s5",
-            "turns": [10, 11],
-            "analysis": (
-                "Turn 10 直接尝试 <code>go to kitchen</code> 报错（温室不直通厨房）。"
-                "Turn 11 CoT 在开头犹豫（<code>H_head = 0.214</code>）后明确推导出“必须先经走廊转去厨房”，以 <b>I_t = 3.83</b> 把动作掰到 <code>go to hallway</code>，成功跳出报错循环并在后续 5 步内收获 <b>G5_strict = +25 分</b>。"
-            ),
-        },
-        {
-            "category": "confident_error",
-            "badge": "💥 低熵自信犯错 / 死循环 (False → False)",
-            "color": "rose",
-            "title": "ScienceWorld `chemistry-mix-paint__s6` (Turn 14) & TextWorld `coin__s1018` (Turn 14–15)：H_C ≈ 0.002–0.005 却连环非法操作",
-            "episode_id": "scienceworld__chemistry-mix-paint-secondary-color__s6",
-            "turns": [13, 14],
-            "analysis": (
-                "在连续报错后，模型并没有发散探索，反而陷入极低熵固执状态：<b>H_C = 0.0020 nats</b>（几乎 99.8% 自信！），CoT 煞有介事地复读 <i>\"The correct command is open door to bee hive.\"</i>，然后以 <code>I_t = 0.002</code> 继续撞同一堵墙。"
-                "在 TextWorld <code>coin__s1018</code> 的 Turn 14–15 也有一模一样的现象：嘴上刚分析完“不是门所以不能 open”，下一秒以 <code>H_C = 0.0035</code> 自信执行 <code>open trash can</code> / <code>open dishwasher</code>！"
-            ),
-        },
-        {
-            "category": "obvious_reward",
-            "badge": "🎯 拿分步为何 I_t ≈ 0？（揭秘负相关根源）",
-            "color": "sky",
-            "title": "ScienceWorld `test-conductivity__s3` (Turn 16)：一步拿 +50 分的关键动作，但 I_t = 0.0000",
-            "episode_id": "scienceworld__test-conductivity__s3",
-            "turns": [16],
-            "analysis": (
-                "模型已经在 workshop 里看到目标物体 aluminum foil，这一步执行 <code>focus on aluminum foil</code> 直接拿到 <b>+50 分</b>。"
-                "但由于这个动作在当前画面下过于显而易见，有 CoT 时 <code>log π(a|h,z) ≈ 0</code>、无 CoT 时 <code>log π(a|h) ≈ 0</code>，导致 <b>I_t = 0.0000</b>。"
-                "两个游戏里所有 <code>reward > 0</code> 步的 I_t 中位数都是 <code>0.0000</code>，直接解释了为什么全集上 I_t 与即时奖励呈 <b>-0.22 / -0.27 显著负相关</b>！"
-            ),
-        },
-        {
-            "category": "aimless_high_i",
-            "badge": "🌀 高 I_t 却在瞎逛 / 走偏 (aimless_explore)",
-            "color": "amber",
-            "title": "TextWorld `cookingworld__s1007` (Turn 25)：全场最高 I_t = 20.78，只是 CoT 把模型带去检查无关台面",
-            "episode_id": "textworld_express__cookingworld__s1007",
-            "turns": [25],
-            "analysis": (
-                "这一步 <b>I_t 高达 20.78</b>（无 CoT 时模型完全不想选 <code>examine counter</code>，靠 CoT 硬掰过去），但其实只是长程做饭陷入瞎找食材的死胡同，最终超时失败。"
-                "这直观说明：<b>高 I_t 只代表“CoT 强行改写了直觉动作”，绝不等价于“好 CoT”！</b>"
-            ),
-        },
-        {
-            "category": "sign_conflict",
-            "badge": "⚠️ E18 符号反转实证（负负得正）",
-            "color": "orange",
-            "title": "ScienceWorld `test-conductivity__s16` (Turn 28)：负向 CoT 同时 D_self = -1.78，若相乘将变重奖",
-            "episode_id": "scienceworld__test-conductivity__s16",
-            "turns": [28],
-            "analysis": (
-                "在两个 Bench 所有被判为负向（<code>A_proxy × I_t < 0</code>）的 CoT 中，高达 <b>68.4%（SW）</b> 和 <b>65.4%（TW）</b> 的 token 同时满足 <code>D_self < 0</code>。"
-                "把这一轮的着色切换到 <b>D_self</b> 视图就能直观看到满屏红色负值 token——如果照旧公式 <code>A_C = w · D</code> 乘上负权重，接近七成想惩罚的 token 会瞬间反转成正向强化！"
-            ),
-        },
-    ]
-
-    # Figure metadata + plain-Chinese interpretation for all 10 paired figures
-    fig_catalog = [
-        {
-            "key": "Fig01",
-            "e_tag": "E04",
-            "title": "桥梁函数 I_t 整体分布 & 终局成败对比",
-            "sw_note": "均值 0.840 但中位数仅 0.005（极度右偏），93.8% 为正；失败局反而出现更多高 I_t 长尾。",
-            "tw_note": "均值 1.290、中位数 0.027，92.6% 为正；失败局（如 cookingworld）的 I_t 显著高于成功局。",
-            "takeaway": "两个游戏完全一致：I_t 不是对称正态，而是“大量挤在 0 附近 + 少数超高正尾”，且 I_t < 0 仅占 2.7%–3.4%。",
-        },
-        {
-            "key": "Fig02",
-            "e_tag": "E04 + E16",
-            "title": "桥梁函数 I_t 按任务难度、步数深度与动作长度分层",
-            "sw_note": "L2/L3 难任务 I_t 分散度更大；随步数加深 I_t 略有变化，短动作（1–2 tok，如 inventory/wait）I_t 方差更大。",
-            "tw_note": "mapreader（100% 赢）I_t 最低且紧贴 0；cookingworld（0% 赢）I_t 显著偏高——提示必须做 E16 控制任务难度！",
-            "takeaway": "不同难度任务间 I_t 差异显著，因此跨任务混在一起看相关性会混入难度偏差，必须看任务内相关与 E16 回归。",
-        },
-        {
-            "key": "Fig03",
-            "e_tag": "E05 + E06",
-            "title": "CoT 精确熵 (H_C) vs Action 精确熵 (H_A) 分布对照",
-            "sw_note": "CoT 均值 0.153 nats（P90 0.471），而 Action 熵几乎全贴着 0（均值 0.015，中位数 0.000）。",
-            "tw_note": "CoT 均值 0.163 nats（P90 0.502），Action 熵均值仅 0.026（中位数 0.000），两者分布量级差 6–10 倍。",
-            "takeaway": "✅ 强力验证核心立项前提：模型几乎所有决策不确定性都在 CoT 里，写完 CoT 后吐 Action 几乎是 99% 确定性照抄。",
-        },
-        {
-            "key": "Fig04",
-            "e_tag": "E07 + E11",
-            "title": "Reward 稀疏度覆盖率 & 零奖励五类动作大解剖",
-            "sw_note": "92.0% 的步子 r_t=0；五类 0 奖励中，aimless_explore（瞎逛）I_t 最高（1.79），effective_setup 中位数仅 0.0008。",
-            "tw_note": "94.8% 的步子 r_t=0；同样是 aimless_explore（2.05）I_t 最高，illegal_action CoT 熵最高（0.186），effective_setup 中位数 0.0003。",
-            "takeaway": "两个游戏排序一模一样：0 奖励里“有效铺垫”其实很丝滑（低 I_t、低熵），真正把 I_t 顶上去的反而是“瞎逛”。",
-        },
-        {
-            "key": "Fig05",
-            "e_tag": "E09",
-            "title": "核心指标与收益的 Episode-Cluster Bootstrap 相关性森林图",
-            "sw_note": "I_empty/I_neutral 与 r_t 显著负相关（-0.217/-0.231）；H_C_mean 与 H_C_p90 的 95% CI 全部跨过 0（不显著）。",
-            "tw_note": "I_t 和 H_C 几乎全部显著负相关（-0.11 ~ -0.30）；但按任务内控制后 H_C 对终局分不再显著。",
-            "takeaway": "25 对跨 Bench 指标里有 24 对方向一致（几乎全负），彻底推翻“简单认为高 I_t = 好 CoT”的直觉。",
-        },
-        {
-            "key": "Fig06",
-            "e_tag": "E10",
-            "title": "2×2 联合热力图 (H_C × I_t)、四象限拆解 & 无泄露预测 CV",
-            "sw_note": "Low_HC & I<=0 合法率 84.2%、G3_strict=13.86 全面碾压 I>0 组；CV 里加 I_t×r_t 后预测成功 AUROC 反从 0.621 降到 0.596。",
-            "tw_note": "I<=0 组成功率 57%–60% 远超 I>0 组 21%–22%；CV 里 I_t 看似 AUROC 0.667，但 E16 控制任务难度后 p=0.653 消失。",
-            "takeaway": "❌ 原表四象限与 r_t×I_t 乘积直接拿来做 advantage 不成立，I<=0 根本不是“坏 CoT”，而是“顺风稳步”。",
-        },
-        {
-            "key": "Fig07",
-            "e_tag": "E13",
-            "title": "无 CoT 基线稳健性：空 Thought: vs 中性 Thought:",
-            "sw_note": "两者 Spearman=0.777、Pearson=0.904、正负号一致率 92.2%，均值差仅 -0.101。",
-            "tw_note": "两者 Spearman=0.849、正负号一致率 87.1%，中性基线的 I_t 均值甚至略高于空基线（1.57 vs 1.29）。",
-            "takeaway": "✅ 排除了“空 Thought: 格式错位”的担忧：I_t 高度偏正且与即时奖励负相关，是真实概率特性而非格式噪音。",
-        },
-        {
-            "key": "Fig08",
-            "e_tag": "E15",
-            "title": "失败轨迹终止前最后 5 步的 CoT 熵与 I_t 演化",
-            "sw_note": "52 局失败轨迹临近结束时，H_C_p90 从 0.50 稳步下降到 0.38（越到失败越固执/低熵），I_t 维持在 0.6–0.8。",
-            "tw_note": "30 局失败轨迹最后一步 H_C_p90 从 0.56 骤降到 0.45，I_t 也从 1.7 降到 1.0。",
-            "takeaway": "模型失败前并不是“越来越慌乱”，而是逐渐陷入“低熵麻木死循环”——这为针对性惩罚“低熵重复犯错”提供了依据。",
-        },
-        {
-            "key": "Fig09",
-            "e_tag": "E17",
-            "title": "CoT 内部位置熵曲线（前 10% → 100%）& 汇总量预测力对比",
-            "sw_note": "绝美 X 型交叉：非法动作在 CoT 开头 (10%-20%) 熵高达 0.28（合法的 2 倍），中后段反低于合法动作！H_head 相关 -0.227 吊打均值 -0.038。",
-            "tw_note": "完全相同的 X 型交叉！非法动作开头熵 0.33 vs 合法 0.16，H_head 对合法性相关高达 -0.293，远强于均值 -0.149。",
-            "takeaway": "💡 跨 Bench 最强细粒度规律：整段取平均会把开头“报错慌乱”和中后段“探索纠错”正负抵消！必须按位置分段看 CoT 熵。",
-        },
-        {
-            "key": "Fig10",
-            "e_tag": "E18",
-            "title": "State-OPD Self-Teacher Gap (D_self) 分布与符号冲突检验",
-            "sw_note": "98.4% 为负（均值 -1.124），随步数越深越负（rho=-0.35）；负向 CoT 中 68.4% token 同时 D_self<0！",
-            "tw_note": "97.9% 为负（均值 -1.553），随步数越深越负（rho=-0.28）；负向 CoT 中 65.4% token 同时 D_self<0！",
-            "takeaway": "❌ 两记重锤：① 8B 同模型删历史 CoT 会失忆；② 乘积公式 A=w·D 会把近 7 成错词负负得正变成重奖，OPD 必须改相加+强 Teacher。",
-        },
-    ]
-
+    print("[HTML Builder] Loading ScienceWorld and TextWorldExpress data and token stats...")
+    rng = np.random.default_rng(BOOT_SEED)
+    sw = build_benchmark_bundle("scienceworld", "scienceworld_full", "ScienceWorld", rng)
+    tw = build_benchmark_bundle("textworld_express", "textworld_express_full", "TextWorldExpress", rng)
     payload = {
         "sw": sw,
         "tw": tw,
-        "cross_fig": cross_fig,
-        "cross_e09": cross_e09,
-        "curated_cases": curated_cases,
-        "fig_catalog": fig_catalog,
+        "cross_fig": rel(RES_DIR / "cross_benchmark" / "Fig_cross_benchmark_overview.png"),
+        "curated_cases": CURATED_CASES,
+        "fig_catalog": FIG_CATALOG,
     }
-    data_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    # Escape </script> inside JSON safely
-    data_json = data_json.replace("</", "<\\/")
+    data_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+    html_doc = TEMPLATE.replace("__BUILD_DATE__", dt.date.today().isoformat()).replace("__REPORT_DATA__", data_json)
+    OUT_HTML.write_text(html_doc, encoding="utf-8")
 
-    html_doc = f"""<!DOCTYPE html>
+    for b in (sw, tw):
+        o, f = b["overview"], b["fch"]
+        print(
+            f"  {o['label']}: I>0 {o['I_emp_pos_pct']}%, I<0 {o['I_emp_neg_pct']}%, rho_surp {o['rho_surp_emp']}, "
+            f"r>0 I_med {o['r_pos_I_med']}, loop {o['loop_pct']}%, H_A=0 {o['H_A_zero_pct']}%, "
+            f"FT/FF {b['recovery_ci']['FT_vs_FF']}, FT/FF_new {b['recovery_ci']['FT_vs_FF_new']}, "
+            f"C<0 {f['C_neg_pct']}%, sign agree {f['sign_agree_pct']}%, |C|<eps {f['C_small_pct']}%, "
+            f"turn corr(D,H) {f['turn_corr_mean']} ({f['turn_corr_neg_pct']}% < 0)"
+        )
+    size_mb = OUT_HTML.stat().st_size / (1024 * 1024)
+    print(f"[HTML Builder Complete] Wrote {OUT_HTML} ({size_mb:.2f} MB)")
+
+
+TEMPLATE = r"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Qwen3-8B CoT→Action 长程信用分配诊断实验报告</title>
+<title>CoT→Action 诊断实验报告</title>
+<meta name="description" content="Qwen3-8B 在 ScienceWorld 与 TextWorldExpress 上的 CoT→Action 影响与长程信用分配诊断（E01–E18）" />
+<link rel="stylesheet" href="assets/katex/katex.min.css" />
+<script src="assets/katex/katex.min.js"></script>
+<script src="assets/katex/contrib/auto-render.min.js"></script>
 <style>
-  :root {{
-    --bg: #f8fafc;
-    --surface: #ffffff;
-    --surface-2: #f1f5f9;
-    --border: #e2e8f0;
-    --text: #0f172a;
-    --muted: #475569;
-    --faint: #94a3b8;
-    --primary: #2563eb;
-    --primary-soft: #eff6ff;
-    --emerald: #059669;
-    --emerald-soft: #ecfdf5;
-    --rose: #e11d48;
-    --rose-soft: #fff1f2;
-    --amber: #d97706;
-    --amber-soft: #fffbeb;
-    --violet: #7c3aed;
-    --violet-soft: #f5f3ff;
-    --sky: #0284c7;
-    --sky-soft: #f0f9ff;
-    --radius: 12px;
-    --shadow: 0 1px 3px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
-  }}
-  * {{ box-sizing: border-box; }}
-  body {{
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.6;
-    font-size: 14px;
-  }}
-  code {{
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    background: #f1f5f9;
-    color: #0f172a;
-    padding: 1px 5px;
-    border-radius: 5px;
-    font-size: 12.5px;
-  }}
-  /* Header */
-  .hero {{
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #1e3a5f 100%);
-    color: #f8fafc;
-    padding: 26px 28px 20px;
-    border-bottom: 1px solid #334155;
-  }}
-  .hero-inner {{ max-width: 1420px; margin: 0 auto; }}
-  .hero h1 {{ margin: 0 0 8px; font-size: 23px; font-weight: 700; letter-spacing: -.01em; }}
-  .hero-sub {{ color: #cbd5e1; font-size: 13.5px; margin: 0 0 14px; }}
-  .pill-row {{ display: flex; flex-wrap: wrap; gap: 8px; }}
-  .pill {{
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 500;
-    background: rgba(255,255,255,.11); color: #e2e8f0; border: 1px solid rgba(255,255,255,.15);
-  }}
-  .pill.ok {{ background: rgba(16,185,129,.22); color: #a7f3d0; border-color: rgba(16,185,129,.35); }}
+  :root {
+    --bg: #ffffff;
+    --soft: #f7f6f2;
+    --soft-2: #efede6;
+    --border: #e2dfd6;
+    --rule: #222222;
+    --text: #1b1b1b;
+    --muted: #5b5850;
+    --faint: #8d897f;
+    --accent: #1f4e79;
+    --accent-soft: #eaf0f6;
+    --pos: #1e6b47;
+    --neg: #a3262c;
+    --warn: #8a5a00;
+    --violet: #5b3f8c;
+    --serif: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", "Georgia", "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  html { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--serif); font-size: 16px; line-height: 1.75;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  .katex { font-size: 1.05em; }
+  .katex-display { margin: 12px 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(31,78,121,.28); }
+  a:hover { border-bottom-color: var(--accent); }
+  code { font-family: var(--mono); font-size: .84em; background: var(--soft); padding: .08em .35em; border-radius: 3px; }
+  p { margin: 0 0 12px; }
 
-  /* Sticky Tabs */
-  .nav-wrap {{
-    position: sticky; top: 0; z-index: 40;
-    background: rgba(255,255,255,.94); backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--border);
-  }}
-  .nav-inner {{
-    max-width: 1420px; margin: 0 auto; padding: 0 24px;
-    display: flex; gap: 4px; overflow-x: auto;
-  }}
-  .tab-btn {{
-    appearance: none; border: none; background: transparent; cursor: pointer;
-    padding: 13px 16px; font-size: 14px; font-weight: 600; color: var(--muted);
-    border-bottom: 2.5px solid transparent; white-space: nowrap; transition: all .15s;
-  }}
-  .tab-btn:hover {{ color: var(--text); }}
-  .tab-btn.active {{ color: var(--primary); border-bottom-color: var(--primary); }}
+  /* Masthead */
+  .masthead { border-bottom: 1px solid var(--border); padding: 46px 20px 28px; text-align: center; }
+  .masthead h1 { font-size: 30px; font-weight: 600; line-height: 1.35; margin: 0 0 8px; }
+  .masthead .sub { font-size: 17px; color: var(--muted); margin: 0 0 14px; }
+  .masthead .meta { font-family: var(--sans); font-size: 13px; color: var(--muted); }
+  .masthead .meta span + span::before { content: "·"; margin: 0 9px; color: var(--faint); }
 
-  /* Main Container */
-  .container {{ max-width: 1420px; margin: 0 auto; padding: 22px 24px 60px; }}
-  .tab-panel {{ display: none; }}
-  .tab-panel.active {{ display: block; }}
+  /* Tabs */
+  nav.tabs { position: sticky; top: 0; z-index: 40; background: rgba(255,255,255,.96); backdrop-filter: blur(6px); border-bottom: 1px solid var(--border); }
+  .tabs-inner { max-width: 1240px; margin: 0 auto; padding: 0 16px; display: flex; gap: 2px; overflow-x: auto; }
+  .tab-btn {
+    appearance: none; border: 0; background: transparent; cursor: pointer;
+    font-family: var(--sans); font-size: 14px; font-weight: 500; color: var(--muted);
+    padding: 12px 14px; border-bottom: 2px solid transparent; white-space: nowrap;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--text); }
 
-  /* Cards & Grids */
-  .grid-4 {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }}
-  .grid-2 {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }}
-  .grid-3 {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }}
-  @media (max-width: 1080px) {{
-    .grid-4 {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
-    .grid-2, .grid-3 {{ grid-template-columns: 1fr; }}
-  }}
-  .card {{
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow);
-  }}
-  .card + .card, .section {{ margin-top: 18px; }}
-  .kpi-label {{ font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }}
-  .kpi-val {{ font-size: 26px; font-weight: 750; margin: 4px 0 4px; letter-spacing: -.02em; }}
-  .kpi-sub {{ font-size: 12.5px; color: var(--muted); }}
+  main { max-width: 1240px; margin: 0 auto; padding: 30px 16px 90px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .prose { max-width: 880px; }
 
-  /* Badges */
-  .badge {{
-    display: inline-flex; align-items: center; padding: 2px 8px;
-    border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
-  }}
-  .b-rose {{ background: var(--rose-soft); color: var(--rose); border: 1px solid #fecdd3; }}
-  .b-emerald {{ background: var(--emerald-soft); color: var(--emerald); border: 1px solid #a7f3d0; }}
-  .b-amber {{ background: var(--amber-soft); color: var(--amber); border: 1px solid #fde68a; }}
-  .b-violet {{ background: var(--violet-soft); color: var(--violet); border: 1px solid #ddd6fe; }}
-  .b-sky {{ background: var(--sky-soft); color: var(--sky); border: 1px solid #bae6fd; }}
-  .b-slate {{ background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }}
-  .b-orange {{ background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }}
+  h2.sec { font-size: 22px; font-weight: 600; margin: 44px 0 14px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .tab-panel > h2.sec:first-child, .tab-panel > .prose > h2.sec:first-child { margin-top: 0; }
+  h2.sec .n { color: var(--faint); font-weight: 500; margin-right: 10px; }
+  h3.sub { font-size: 17px; font-weight: 600; margin: 26px 0 8px; }
+  .note { font-size: 14px; color: var(--muted); }
+  .abstract { background: var(--soft); border-left: 3px solid var(--accent); padding: 16px 20px; margin: 0 0 8px; }
+  .abstract p:last-child { margin-bottom: 0; }
 
-  /* Finding Cards */
-  .finding-card {{
-    background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--primary);
-    border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow); margin-bottom: 14px;
-  }}
-  .finding-card.rose {{ border-left-color: var(--rose); }}
-  .finding-card.emerald {{ border-left-color: var(--emerald); }}
-  .finding-card.amber {{ border-left-color: var(--amber); }}
-  .finding-card.violet {{ border-left-color: var(--violet); }}
-  .finding-head {{ display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }}
-  .finding-title {{ font-size: 16px; font-weight: 700; margin: 0; }}
-  .finding-body {{ color: #334155; font-size: 13.8px; margin: 0; }}
-  .stat-strip {{
-    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; padding-top: 10px;
-    border-top: 1px dashed var(--border);
-  }}
-  .stat-chip {{
-    background: var(--surface-2); padding: 4px 10px; border-radius: 8px;
-    font-size: 12.5px; color: var(--text);
-  }}
-  .stat-chip strong {{ font-variant-numeric: tabular-nums; }}
+  ol.findings { padding-left: 1.5em; margin: 0; }
+  ol.findings > li { margin-bottom: 16px; padding-left: 4px; }
+  ol.findings > li > b:first-child { font-weight: 600; }
+  ul.plain { padding-left: 1.3em; margin: 0 0 12px; }
+  ul.plain li { margin-bottom: 6px; }
 
-  /* Tables */
-  .table-wrap {{ overflow-x: auto; }}
-  table {{ width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }}
-  th, td {{ padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }}
-  th {{ background: var(--surface-2); font-weight: 600; color: #334155; position: sticky; top: 0; }}
-  tr:hover td {{ background: #f8fafc; }}
-  .num {{ text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}
-  .pos {{ color: var(--emerald); font-weight: 600; }}
-  .neg {{ color: var(--rose); font-weight: 600; }}
-
-  /* Section titles */
-  .sec-title {{
-    font-size: 17px; font-weight: 700; margin: 0 0 12px;
-    display: flex; align-items: center; gap: 8px;
-  }}
-  .sec-desc {{ color: var(--muted); font-size: 13px; margin: -6px 0 14px; }}
-
-  /* Controls & Buttons */
-  .btn {{
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;
-    border: 1px solid var(--border); background: var(--surface); color: var(--text);
-    cursor: pointer; transition: all .12s;
-  }}
-  .btn:hover {{ background: var(--surface-2); border-color: #cbd5e1; }}
-  .btn.primary {{ background: var(--primary); color: #fff; border-color: var(--primary); }}
-  .btn.primary:hover {{ background: #1d4ed8; }}
-  .btn.active {{ background: #0f172a; color: #fff; border-color: #0f172a; }}
-  .btn-group {{ display: inline-flex; gap: 6px; flex-wrap: wrap; }}
+  /* booktabs-style tables */
+  .table-wrap { overflow-x: auto; margin: 10px 0 6px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; font-variant-numeric: tabular-nums lining-nums; border-top: 1.5px solid var(--rule); border-bottom: 1.5px solid var(--rule); }
+  thead th { border-bottom: 1px solid var(--rule); font-weight: 600; text-align: left; padding: 7px 10px; white-space: nowrap; vertical-align: bottom; }
+  thead tr.group th { border-bottom: 1px solid var(--border); text-align: center; }
+  td { padding: 6px 10px; vertical-align: top; border-bottom: 1px solid #efede6; }
+  tbody tr:last-child td { border-bottom: 0; }
+  th.num, td.num { text-align: right; white-space: nowrap; }
+  td.lbl { min-width: 180px; }
+  tr.subrow td:first-child { padding-left: 28px; color: var(--muted); }
+  tr.em td { background: #f6f3ea; }
+  tr.sep td { border-top: 1px solid var(--rule); }
+  .caption { font-size: 14px; color: var(--muted); margin: 6px 0 0; }
+  .pos { color: var(--pos); }
+  .neg { color: var(--neg); }
+  .dim { color: var(--faint); }
+  .ci { color: var(--muted); font-size: .92em; }
 
   /* Figures */
-  .fig-card {{
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 16px 18px; margin-bottom: 18px; box-shadow: var(--shadow);
-  }}
-  .fig-img {{
-    width: 100%; height: auto; border-radius: 8px; border: 1px solid #e2e8f0;
-    cursor: zoom-in; background: #fff; display: block;
-  }}
-  .fig-caption {{
-    margin-top: 8px; padding: 8px 10px; background: var(--surface-2); border-radius: 8px;
-    font-size: 12.8px; color: #334155;
-  }}
-  .fig-takeaway {{
-    margin-top: 10px; padding: 9px 12px; background: var(--primary-soft); border: 1px solid #bfdbfe;
-    border-radius: 8px; font-size: 13px; color: #1e3a8a; font-weight: 500;
-  }}
+  .fig-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin: 0 0 18px; }
+  figure.fig { margin: 0 0 40px; padding-bottom: 26px; border-bottom: 1px solid var(--border); }
+  .fig-label { font-family: var(--sans); font-size: 12.5px; color: var(--muted); letter-spacing: .03em; }
+  .fig-title { font-size: 18px; font-weight: 600; margin: 2px 0 12px; }
+  .fig-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .fig-single { max-width: 820px; }
+  .fig-img { width: 100%; height: auto; display: block; border: 1px solid var(--border); cursor: zoom-in; background: #fff; }
+  .bench-name { font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+  .fig-note { font-size: 14.5px; margin-top: 8px; }
+  .fig-take { font-size: 15px; margin: 14px 0 0; }
 
-  /* Trajectory Explorer */
-  .explorer-layout {{
-    display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 16px; align-items: start;
-  }}
-  @media (max-width: 1024px) {{ .explorer-layout {{ grid-template-columns: 1fr; }} }}
-  .ep-sidebar {{
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    box-shadow: var(--shadow); overflow: hidden; position: sticky; top: 62px;
-    max-height: calc(100vh - 82px); display: flex; flex-direction: column;
-  }}
-  .ep-filters {{ padding: 12px; border-bottom: 1px solid var(--border); background: var(--surface-2); display: grid; gap: 8px; }}
-  .ep-filters select, .ep-filters input {{
-    width: 100%; padding: 6px 8px; border-radius: 7px; border: 1px solid #cbd5e1;
-    font-size: 12.5px; background: #fff; color: var(--text);
-  }}
-  .ep-list {{ overflow-y: auto; flex: 1; }}
-  .ep-item {{
-    padding: 10px 12px; border-bottom: 1px solid #f1f5f9; cursor: pointer; transition: background .1s;
-  }}
-  .ep-item:hover {{ background: #f8fafc; }}
-  .ep-item.active {{ background: var(--primary-soft); border-left: 3px solid var(--primary); }}
-  .ep-item-title {{ font-weight: 600; font-size: 12.8px; word-break: break-all; }}
-  .ep-item-meta {{ display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; font-size: 11.5px; color: var(--muted); }}
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-family: var(--sans); }
+  .seg button { appearance: none; border: 0; background: #fff; padding: 5px 12px; font-size: 13px; color: var(--muted); cursor: pointer; font-family: var(--sans); }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.active { background: var(--text); color: #fff; }
+  .btn { font-family: var(--sans); font-size: 13px; border: 1px solid var(--border); background: #fff; border-radius: 6px; padding: 5px 12px; cursor: pointer; color: var(--text); white-space: nowrap; }
+  .btn:hover { background: var(--soft); }
 
-  /* Turn Cards & Token Heatmap */
-  .turn-card {{
-    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-    padding: 14px 16px; margin-bottom: 12px; transition: box-shadow .15s;
-  }}
-  .turn-card.highlight-turn {{ border-color: var(--violet); box-shadow: 0 0 0 3px rgba(124,58,237,.16); }}
-  .turn-card.recovery-turn {{ border-left: 4px solid var(--violet); }}
-  .turn-card.reward-turn {{ border-left: 4px solid var(--emerald); }}
-  .turn-card.invalid-turn {{ border-left: 4px solid var(--rose); }}
-  .turn-head {{
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
-    gap: 8px; padding-bottom: 8px; border-bottom: 1px solid #f1f5f9; margin-bottom: 10px;
-  }}
-  .obs-box {{
-    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 7px; padding: 8px 10px;
-    font-size: 12.5px; color: #475569; white-space: pre-wrap; margin-bottom: 8px;
-  }}
-  .obs-box summary {{ cursor: pointer; font-weight: 600; color: #334155; }}
-  .cot-box {{
-    background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px;
-    line-height: 1.9; font-size: 13.5px; margin-bottom: 8px;
-  }}
-  .tok {{
-    display: inline; padding: 1px 1.5px; border-radius: 3px; cursor: default;
-    border-bottom: 1px solid transparent; transition: outline .08s;
-  }}
-  .tok:hover {{ outline: 1.5px solid #0f172a; }}
-  .action-bar {{
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
-    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px;
-  }}
-  .action-cmd {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; font-size: 13.5px; }}
-  .metric-pills {{ display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }}
-  .mpill {{
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.8px;
-    padding: 2px 7px; border-radius: 6px; background: #f1f5f9; color: #334155;
-  }}
+  .tag { display: inline-block; font-family: var(--sans); font-size: 11.5px; font-weight: 500; padding: 0 7px; border-radius: 3px; border: 1px solid var(--border); color: var(--muted); background: #fff; white-space: nowrap; line-height: 1.75; }
+  .tag.pos { color: var(--pos); border-color: #b9d6c6; background: #f1f8f4; }
+  .tag.neg { color: var(--neg); border-color: #e3c0c2; background: #fbf2f2; }
+  .tag.acc { color: var(--accent); border-color: #c4d4e4; background: var(--accent-soft); }
+  .tag.vio { color: var(--violet); border-color: #d6cde6; background: #f6f3fa; }
+  .tag.warn { color: var(--warn); border-color: #e6d4ad; background: #fbf6ea; }
 
-  /* Spotlight Callout */
-  .spotlight {{
-    background: linear-gradient(135deg, #f5f3ff 0%, #eff6ff 100%);
-    border: 1.5px solid #c4b5fd; border-radius: var(--radius); padding: 18px 20px;
-  }}
+  /* Explorer */
+  .explorer { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 22px; align-items: start; }
+  .ep-side { position: sticky; top: 58px; max-height: calc(100vh - 74px); display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-family: var(--sans); }
+  .ep-filters { padding: 12px; background: var(--soft); border-bottom: 1px solid var(--border); display: grid; gap: 8px; font-size: 13px; }
+  .ep-filters select, .ep-filters input { width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; background: #fff; font-size: 13px; font-family: var(--sans); color: var(--text); }
+  .ep-list { overflow-y: auto; flex: 1; }
+  .ep-item { padding: 9px 12px; border-bottom: 1px solid #f0eee8; cursor: pointer; }
+  .ep-item:hover { background: var(--soft); }
+  .ep-item.active { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  .ep-item .t { font-size: 13px; font-weight: 600; }
+  .ep-item .m { font-size: 12px; color: var(--muted); display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+  .panel { border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px; margin-bottom: 16px; background: #fff; }
+  .ep-head { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+  .ep-head h3 { margin: 6px 0 0; font-size: 18px; font-weight: 600; font-family: var(--mono); word-break: break-all; }
+  .ep-stats { display: flex; gap: 18px; font-family: var(--sans); font-size: 13px; color: var(--muted); }
+  .ep-stats b { color: var(--text); font-size: 16px; font-weight: 600; }
 
-  /* Lightbox */
-  .lightbox {{
-    position: fixed; inset: 0; z-index: 100; background: rgba(15,23,42,.86);
-    display: none; align-items: center; justify-content: center; padding: 24px; cursor: zoom-out;
-  }}
-  .lightbox.open {{ display: flex; }}
-  .lightbox img {{ max-width: 96vw; max-height: 92vh; border-radius: 8px; background: #fff; box-shadow: 0 20px 60px rgba(0,0,0,.5); }}
+  .turn { border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; margin-bottom: 12px; background: #fff; }
+  .turn.k-rec { box-shadow: inset 3px 0 0 var(--violet); }
+  .turn.k-rew { box-shadow: inset 3px 0 0 var(--pos); }
+  .turn.k-inv { box-shadow: inset 3px 0 0 var(--neg); }
+  .turn.hl { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .turn-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-family: var(--sans); font-size: 13px; margin-bottom: 8px; }
+  .turn-head .tt { font-weight: 600; font-size: 14px; margin-right: 4px; }
+  .turn-head .tags { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+  .turn-head .right { color: var(--muted); }
+  .obs { font-family: var(--sans); font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .obs summary { cursor: pointer; }
+  .obs pre { white-space: pre-wrap; font-family: var(--mono); font-size: 12.5px; background: var(--soft); padding: 8px 10px; border-radius: 4px; margin: 6px 0 0; color: var(--text); }
+  .cot-box { font-family: var(--serif); font-size: 15px; line-height: 1.95; margin-bottom: 8px; }
+  .lbl-s { font-family: var(--sans); font-size: 12px; color: var(--faint); margin-right: 6px; }
+  .tok { padding: 1px 0; border-radius: 2px; }
+  .tok:hover { outline: 1px solid var(--text); }
+  .act-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; border-top: 1px dashed var(--border); padding-top: 8px; font-size: 14px; }
+  .act-cmd { font-family: var(--mono); font-weight: 600; font-size: 13.5px; }
+  .metrics { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 6px; font-size: 13.5px; color: var(--muted); }
+  .metrics b { color: var(--text); font-weight: 500; }
 
-  /* Floating Token Tooltip */
-  #tok-tip {{
-    position: fixed; z-index: 90; pointer-events: none; display: none;
-    background: #0f172a; color: #f8fafc; padding: 7px 10px; border-radius: 8px;
-    font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    box-shadow: 0 8px 24px rgba(0,0,0,.35); line-height: 1.5; max-width: 280px;
-  }}
+  .legend { font-family: var(--sans); font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; border: 1px solid rgba(0,0,0,.12); }
+  .dot { border-radius: 50%; }
 
-  /* Color Legend */
-  .legend-bar {{ display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }}
-  .swatch {{ display: inline-block; width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0,0,0,.1); vertical-align: middle; }}
+  /* Cases */
+  .case { margin-bottom: 40px; padding-bottom: 26px; border-bottom: 1px solid var(--border); }
+  .case-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .case h3 { font-size: 18px; font-weight: 600; margin: 4px 0 10px; }
+  .case .analysis { max-width: 900px; margin-bottom: 14px; }
+
+  .lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(20,20,20,.85); display: none; align-items: center; justify-content: center; padding: 24px; cursor: zoom-out; }
+  .lightbox.open { display: flex; }
+  .lightbox img { max-width: 96vw; max-height: 92vh; background: #fff; }
+  #tok-tip { position: fixed; z-index: 90; pointer-events: none; display: none; background: #1b1b1b; color: #f5f5f5; padding: 7px 10px; border-radius: 4px; font-size: 12px; font-family: var(--mono); line-height: 1.55; max-width: 300px; }
+
+  @media (max-width: 960px) {
+    .explorer, .fig-pair { grid-template-columns: 1fr; }
+    .ep-side { position: static; max-height: 420px; }
+    .masthead h1 { font-size: 24px; }
+  }
 </style>
 </head>
 <body>
 
-<header class="hero">
-  <div class="hero-inner">
-    <h1>CoT → Action 影响驱动的长程 Agent 信号分配 · 诊断实验报告</h1>
-    <p class="hero-sub">基于 <b>Qwen/Qwen3-8B</b> 在 ScienceWorld 与 TextWorldExpress 的全量离线诊断（E01–E18）—— 含跨 Bench 图表对比、全量 120 局真实轨迹与逐 Token 精确熵热力图</p>
-    <div class="pill-row">
-      <span class="pill">模型：Qwen/Qwen3-8B (BF16, enable_thinking=False)</span>
-      <span class="pill">ScienceWorld：60 局 / 1,924 步</span>
-      <span class="pill">TextWorldExpress：60 局 / 1,375 步</span>
-      <span class="pill ok">格式解析率 100.0% · 零截断 · 零 NaN</span>
-      <span class="pill ok">跨 Bench 相关性方向一致：24 / 25 对</span>
-    </div>
+<header class="masthead">
+  <h1>CoT→Action 影响与长程信用分配：诊断实验报告</h1>
+  <p class="sub">Qwen3-8B 在 ScienceWorld 与 TextWorldExpress 上的离线诊断（E01–E18）</p>
+  <div class="meta">
+    <span>生成于 __BUILD_DATE__</span>
+    <span><a href="https://github.com/heyxingxing/cot-action-diag">代码与数据</a></span>
+    <span><a href="https://github.com/heyxingxing/cot-action-diag/blob/main/PROGRESS.md">进度与待办</a></span>
+    <span><a href="https://github.com/heyxingxing/cot-action-diag/blob/main/docs/experiment_plan_qwen3_8b.md">实验手册</a></span>
   </div>
 </header>
 
-<nav class="nav-wrap">
-  <div class="nav-inner">
-    <button class="tab-btn active" data-tab="tab-overview">1. 核心结论总览</button>
-    <button class="tab-btn" data-tab="tab-charts">2. 可视化图表分析 (21张图)</button>
-    <button class="tab-btn" data-tab="tab-explorer">3. 交互式轨迹 & Token 熵浏览器 (120局)</button>
-    <button class="tab-btn" data-tab="tab-cases">4. 精选典型案例剖析</button>
-    <button class="tab-btn" data-tab="tab-protocol">5. 实验设置与 E01–E18 清单</button>
+<nav class="tabs">
+  <div class="tabs-inner">
+    <button class="tab-btn active" data-tab="summary">摘要与结论</button>
+    <button class="tab-btn" data-tab="figures">图表</button>
+    <button class="tab-btn" data-tab="explorer">轨迹浏览器</button>
+    <button class="tab-btn" data-tab="cases">案例</button>
+    <button class="tab-btn" data-tab="setup">设置与清单</button>
   </div>
 </nav>
 
-<main class="container">
-  <!-- ===================== TAB 1: OVERVIEW ===================== -->
-  <section id="tab-overview" class="tab-panel active">
-    <div id="kpi-grid" class="grid-4"></div>
-
-    <div class="spotlight section">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px;">
-        <div>
-          <span class="badge b-violet">一句话核心结论</span>
-          <h2 style="margin:6px 0 0;font-size:18px;">原始假设中“高 I_t = 好 CoT”与“A = w·D 相乘”被双 Bench 实证证伪；但实验挖出了更硬核的新信号——“报错后自救步的 I_t 暴涨 + CoT 分段位置熵”！</h2>
-        </div>
-        <button class="btn primary" onclick="jumpToEpisode('textworld_express__coin__s1000', 18)">打开头条案例 (coin__s1000 T18→19) →</button>
-      </div>
-      <p style="margin:0;color:#334155;font-size:13.5px;">
-        顺风步里拿分动作太显而易见，没 CoT 模型也会选（<code>r_t &gt; 0</code> 步的中位数 <code>I_t = 0.0000</code>）；
-        真正靠 CoT 力挽狂澜的时刻，是<b>上一步报错卡壳后（<code>False → True</code>），CoT 通过中后段高探索熵 + 暴涨的 I_t 把动作掰回正轨的那一步</b>（ScienceWorld I_t 暴涨 <b>7.3×</b>，TextWorldExpress 翻 <b>2.2×</b>）！
-      </p>
+<main>
+<!-- ============================ SUMMARY ============================ -->
+<section id="summary" class="tab-panel active">
+  <div class="prose">
+    <h2 class="sec"><span class="n">1</span>摘要</h2>
+    <div class="abstract">
+      <p>Qwen3-8B 以零样本 ReAct 格式（先写 Thought，再写 Action）在两个文本环境中各完成 60 局（3 个任务 × 20 个种子），共 3,299 步。
+      随后用 teacher forcing 离线计算每步 CoT 对动作的影响 $I_t$、CoT 与动作的逐 token 熵 $H^C$、$H^A$，以及去掉历史 CoT 后的 self-teacher gap $D_{t,i}$，并与即时奖励、未来收益和终局结果对照。</p>
+      <p>主要发现：(1) CoT 对动作的影响集中在少数步，多数步 $I_t\approx 0$；(2) $I_t$ 与即时奖励稳定负相关，它度量 CoT 改变动作分布的程度，不度量动作好坏；(3) 单步指标对未来收益几乎没有预测力；(4) $D_{t,i}$ 几乎处处为负，若与带符号的权重相乘，会在大多数步上反转更新方向。
+      据此，CoT 优势中的权重应取非负值，“好坏”的符号应来自单独的 RL 项。这些结论来自诊断数据，尚未经训练验证。</p>
     </div>
 
-    <div class="section">
-      <h2 class="sec-title">五大实证发现（双 Benchmark 交叉验证）</h2>
-      <div id="findings-container"></div>
+    <h2 class="sec"><span class="n">2</span>记号与指标</h2>
+    <p>记 $h_t$ 为第 $t$ 步之前的完整历史（含历史 Thought），$z_t=(z_{t,1},\dots,z_{t,n})$ 为本步 CoT token，$a_t$ 为动作，$s_t$ 为去掉历史 Thought 后的状态上下文（历史 assistant 轮只保留 <code>Action: …</code> 行），$v_t\in\{0,1\}$ 为动作是否合法。</p>
+    $$I_t=\frac{1}{|a_t|}\Big[\log\pi(a_t\mid h_t,z_t)-\log\pi(a_t\mid h_t,\varnothing)\Big]$$
+    <p class="note">$\varnothing$ 为空 Thought；E13 另以中性 Thought 为基线，记作 $I^{\mathrm{neu}}_t$。除非特别说明，$I_t$ 指空 Thought 基线。</p>
+    $$H^C_{t,i}=-\sum_{v\in\mathcal V}\pi(v\mid h_t,z_{t,&lt;i})\log\pi(v\mid h_t,z_{t,&lt;i})$$
+    <p class="note">$H^A$ 的定义相同，作用于动作 token；单位为 nats，在全词表上以 fp32 计算。$\bar H^C_t$ 为一步内的均值，head / tail 为 CoT 前、后三分之一 token 的均值。</p>
+    $$D_{t,i}=\log\pi_T(z_{t,i}\mid s_t,z_{t,&lt;i})-\log\pi_S(z_{t,i}\mid h_t,z_{t,&lt;i})$$
+    <p class="note">本实验 $\pi_T=\pi_S$（同一 Qwen3-8B），记作 $D^{\mathrm{self}}$；$\bar D^{\mathrm{self}}_t$ 为一步内的均值。</p>
+    $$G^{(k)}_t=\sum_{j=1}^{k}r_{t+j},\qquad \hat A_t=\frac{\tilde G^{(3)}_t-\mu_{\text{task}}}{\sigma_{\text{task}}},\qquad C_t=\hat A_t\,I_t$$
+    <p class="note">$G^{(k)}_t$ 为严格未来收益（不含当前步）；$\tilde G^{(3)}_t=\sum_{j=0}^{2}r_{t+j}$ 含当前步，在任务内标准化后作为优势代理 $\hat A_t$。<b>打转步</b>：$a_t=a_{t-1}$ 且上一步动作不合法。</p>
+
+    <h2 class="sec"><span class="n">3</span>基础统计</h2>
+    <div class="table-wrap" id="stats-table"></div>
+    <p class="caption">E01 设定的门槛为动作合法率 $\ge 60\%$，两边均未达到；SW 的不合法步主要来自失败后原样重试（打转）。所有图表均包含打转步。</p>
+
+    <h2 class="sec"><span class="n">4</span>主要结论</h2>
+    <ol class="findings">
+      <li><b>CoT 对动作的影响集中在少数步。</b>
+        $I_t$ 的中位数为 0.005（SW）/ 0.027（TWX），P90 为 2.94 / 4.53。$\bar H^A_t$ 在 57% / 54% 的步上为 0，均值 0.015 / 0.026 nats，远低于 CoT 熵 0.153 / 0.163 nats：Thought 写完后，动作基本确定。</li>
+      <li><b>$I_t$ 度量 CoT 改变动作分布的程度，不度量动作好坏。</b>
+        $I_t$ 与即时奖励的 Spearman 相关为 $-0.217$ / $-0.268$（episode 聚类 bootstrap 95% CI 不含 0），控制任务、步数、长度与合法性后仍显著（E16，$p=0.004$ / $0.014$）。
+        由于有 Thought 时 $\log\pi(a_t\mid h_t,z_t)\approx 0$，$I_t$ 近似等于无 Thought 时动作的 surprisal（Spearman <span id="rho-surp"></span>）；获得奖励的步多为显而易见的动作，其 $I_t$ 中位数约为 0。
+        空 Thought 与中性 Thought 两种基线结论一致（E13：Spearman 0.777 / 0.849，符号一致率 92.2% / 87.1%）。</li>
+      <li><b>单步指标几乎预测不了未来收益。</b>
+        以 $I_t$、$r_t$ 及其交互项预测 $G^{(3)}_t$，5 折 GroupKFold 的 $R^2$ 约为 0（$-0.012$ / $0.001$）；失败局结束前 5 步没有可靠的预警信号（E15，图 8）。</li>
+      <li><b>“报错后自救步的 $I_t$ 更高”主要来自打转步。</b>
+        上一步不合法时，本步合法（F→T）的 $I_t$ 均值是本步仍不合法（F→F）的 7.3 倍（SW）和 2.2 倍（TWX）。但 F→F 中 76% / 46% 是打转步，其 $I_t$ 接近 0。只与 F→F 中换了新动作的步比较，SW 约为 2.0 倍（95% CI 不含 1），TWX 约为 1.4 倍（CI 含 1，不显著）。见表 2。</li>
+      <li><b>CoT 熵与结果的关系弱，且混有“上一步是否报错”。</b>
+        整段 $\bar H^C_t$ 与各项结果的相关在 SW 均不显著，在 TWX 为弱负相关（$-0.12$ 至 $-0.18$）。CoT 前三分之一的熵与本步合法性的相关最强（$-0.227$ / $-0.293$），但它与上一步是否合法的相关更强（$-0.307$ / $-0.366$），按上一步合法性分层后只剩 $-0.08$ 至 $-0.18$。</li>
+      <li><b>$D^{\mathrm{self}}$ 几乎处处为负，不能与带符号的权重相乘。</b>
+        98.4% / 97.9% 的步 $\bar D^{\mathrm{self}}_t<0$，且随步数加深更负（$\rho=-0.349$ / $-0.276$）。token 级分布高度偏斜：中位数约为 $-0.003$ / $-0.004$，但熵越高的 token $D$ 越负；熵 $\le 0.05$ 的 token 中仍有 15% / 16% 满足 $D<-1$，贡献了全部负 gap 的 45% / 47%（表 4）。
+        $C_t<0$ 的步占 80.1% / 82.8%；若 $w_{t,i}$ 随 $C_t$ 取负号，$w_{t,i}D_{t,i}$ 会在这些步上把更新方向反转。另需注意，teacher 上下文中历史轮只有 Action 行，$D<0$ 可能部分来自格式偏移，尚未用对照排除。</li>
+    </ol>
+
+    <h3 class="sub">表 2　上一步不合法之后：$I_t$ 与 CoT 熵</h3>
+    <div class="table-wrap" id="recovery-table"></div>
+    <p class="caption">F / T 表示上一步、本步动作是否合法。比值为 $I_t$ 均值之比，方括号内为 episode 聚类 bootstrap（2,000 次）95% CI。</p>
+
+    <h2 class="sec"><span class="n">5</span>对方法设计的含义</h2>
+    <p>设计中的 CoT 优势写作 $A^C_{t,i}=w_{t,i}D_{t,i}$，$w_{t,i}=f(C_t,H^C_{t,i})$。诊断数据对 $f$ 的约束如下。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>环节</th><th>原设想</th><th>诊断证据</th><th>建议</th></tr></thead>
+        <tbody>
+          <tr><td>无 CoT 基线</td><td>空 Thought</td><td>空与中性基线一致（E13）</td><td>两者均可，报告中同时给出</td></tr>
+          <tr><td>方向与幅度</td><td>$C_t=\hat A_t I_t$ 同时给出方向与幅度</td><td>$I_t>0$ 占 93.8% / 92.6%；$C_t\ne 0$ 时 $\operatorname{sign}(C_t)=\operatorname{sign}(\hat A_t)$ 的比例为 <span id="sign-agree"></span>；$|C_t|&lt;0.01$ 占 <span id="c-small"></span></td><td>$I_t$ 只用作非负门控 $g(I_t)$；方向由 $\hat A_t$ 给出，需改进 $\hat A_t$（critic 或 MC rollout）</td></tr>
+          <tr><td>熵加权</td><td>按 $H^C_{t,i}$ 调制 token 权重</td><td>整段熵弱；前段熵混有上一步报错；两条熵假设在步级均无一致证据（表 3）</td><td>不先验加入；在训练中把熵乘在 RL 项上做消融</td></tr>
+          <tr><td>OPD 项</td><td>$A^C_{t,i}=w_{t,i}D_{t,i}$</td><td>$D$ 几乎处处为负；$C_t&lt;0$ 的步占八成以上</td><td>$w\ge 0$；RL 与 OPD 相加；补格式对照 teacher 与 32B teacher</td></tr>
+        </tbody>
+      </table>
     </div>
+    <p>据此建议在训练中比较如下形式，其中 $g(I_t)\in[0,1]$ 随 $I_t$ 单调增加：</p>
+    $$A^C_{t,i}=\alpha\,g(I_t)\,\hat A_t+\beta\,D_{t,i}$$
+    <p class="note">$\hat A_t$ 给出好坏的符号，$D_{t,i}$ 给出逐 token 的方向且不被翻转；CoT 不起作用的步（$I_t\approx 0$）不分到 RL 信号。该形式尚未经训练验证。</p>
 
-    <div class="grid-2 section">
-      <div class="card">
-        <h3 class="sec-title">💡 核心新发现可视化：上一步报错后“继续错 vs 成功自救”对比</h3>
-        <p class="sec-desc">跨 ScienceWorld 与 TextWorldExpress 完全重现：报错后成功跳出的步子，I_t 与 CoT 后段熵同步暴涨。</p>
-        <div id="recovery-svg-box"></div>
-        <div class="table-wrap" style="margin-top:10px;" id="recovery-table-box"></div>
-      </div>
+    <h3 class="sub">表 3　按 $C_t$ 符号与 CoT 熵分组（检验两条熵假设）</h3>
+    <p>假设 (a)：正向 CoT 中高熵 token 更值得更新；假设 (b)：负向 CoT 中低熵 token 应罚得更重。下表以 $|C_t|&gt;0.01$ 分组，熵的高低按任务内 $\bar H^C_t$ 中位数划分。</p>
+    <div class="table-wrap" id="fch-table"></div>
+    <p class="caption">(a) $C_t&gt;0.01$ 的步很少，且两边方向相反（SW 低熵组更好，TWX 高熵组略好）。(b) 在 $C_t&lt;-0.01$ 中，低熵组没有一致地更差：SW 合法率略低但 $G^{(3)}_t$ 更高，TWX 合法率更高。不合法步中熵最低的四分之一里，打转步占 <span id="loop-lowh"></span>，其余不合法步为 <span id="loop-other"></span>：“自信地错”多数是打转。</p>
 
-      <div class="card">
-        <h3 class="sec-title">🧭 基于本批实验数据的下一步 RL 设计拍板建议</h3>
-        <p class="sec-desc">每一条建议均直接由双 Bench 数据支撑，供组会讨论方法修订。</p>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>设计环节</th><th>原方案构想</th><th>实证检验结论</th><th>建议修订方案</th></tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><b>无 CoT 基线</b><br>(E03/E13)</td>
-                <td>空 <code>Thought:</code></td>
-                <td><span class="badge b-emerald">✅ 可靠</span> 空/中性符号一致率 87–92%，非格式假象</td>
-                <td>两者皆可用，优先用中性基线或 Qwen3 原生空思考做对照</td>
-              </tr>
-              <tr>
-                <td><b>桥梁信号 I_t</b><br>(E03/E04/E10)</td>
-                <td><code>C_t = A_t · I_t</code><br>直接当 CoT 奖惩</td>
-                <td><span class="badge b-rose">❌ 失效</span> I_t ≈ No-CoT Surprisal (ρ=0.98)，与 r_t 在 6/6 任务全负相关；I&lt;0 仅 3%</td>
-                <td><b>不可直接全局鼓励高 I_t</b>；改作“转折/纠错步门控”或结合未来收益 G_t，禁止 <code>(-,-)</code> 负负得正</td>
-              </tr>
-              <tr>
-                <td><b>CoT 熵加权</b><br>(E05/E15/E17)</td>
-                <td>用整段 H_C 均值或 P90 调制更新</td>
-                <td><span class="badge b-amber">⚠️ 粒度过粗</span> Action 熵≈0 验证立项；但 CoT 开头与中后段呈 X 型交叉，均值互相抵消</td>
-                <td>按位置/状态细分：<b>惩罚低熵死循环</b>（E15 失败前熵下降）+ 区分开头报错慌乱 vs 中后段有效探索</td>
-              </tr>
-              <tr>
-                <td><b>Teacher OPD</b><br>(E18)</td>
-                <td><code>A_C = w · D</code><br>8B 删历史 CoT</td>
-                <td><span class="badge b-rose">❌ 符号反转+失忆</span> 负向 CoT 中 65–68% token 满足 D&lt;0；8B 删历史 98% 为负</td>
-                <td><b>绝不可相乘</b>，改为 RL 与 OPD <b>相加</b>（<code>α·A_RL + β·D</code>）；并测 <code>Qwen3-32B</code> 强 Teacher</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+    <h3 class="sub">表 4　token 级 $D^{\mathrm{self}}$ 按 CoT 熵分段</h3>
+    <div class="table-wrap" id="token-table"></div>
+    <p class="caption">“负 gap 份额”为该段 token 的 $\sum\max(-D,0)$ 占全部 CoT token 的比例。步内 token 熵与 $D$ 的 Pearson 相关均值为 <span id="turn-corr"></span>。</p>
+
+    <h2 class="sec"><span class="n">6</span>局限</h2>
+    <ul class="plain">
+      <li>两边的动作合法率（42.5% / 59.9%）都低于 E01 设定的 60% 门槛；SW 三分之一的步是打转步。</li>
+      <li>终局结果的样本很窄：mapreader 20/20 全胜，SW chemistry / test-conductivity 与 TWX cookingworld 均为 0/20，与成功率相关的结论主要来自 find-living-thing 与 coin。</li>
+      <li>$\hat A_t$ 只是基于 3 步收益的代理，92%–95% 的即时奖励为 0。</li>
+      <li>E14 人工盲标尚未完成，$I_t$ 在人看来度量的是什么尚未验证；32B strong teacher 与格式对照 teacher 尚未运行。</li>
+      <li>结论均来自诊断数据，未经训练验证。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================ FIGURES ============================ -->
+<section id="figures" class="tab-panel">
+  <h2 class="sec"><span class="n">A</span>跨 Benchmark 对照与按任务统计</h2>
+  <div class="fig-pair" style="align-items:start;">
+    <div>
+      <img id="cross-img" class="fig-img" alt="跨 Benchmark 相关性总览" />
+      <p class="caption">Spearman 相关，episode 聚类 bootstrap（1,000 次）95% CI。25 个指标对中 24 个两边同号，唯一不同号的是 $H^A$ 与合法性。</p>
     </div>
-  </section>
+    <div class="table-wrap" id="task-table" style="margin-top:0;"></div>
+  </div>
 
-  <!-- ===================== TAB 2: CHARTS ===================== -->
-  <section id="tab-charts" class="tab-panel">
-    <div class="card">
-      <h2 class="sec-title">跨 Benchmark 相关性总览（ScienceWorld vs TextWorldExpress）</h2>
-      <p class="sec-desc">不比较两边原始 Reward 绝对值，严格按 Episode-Cluster Bootstrap（1,000 次重采样）对比无量纲 Spearman 相关系数。25 组里 24 组方向完全一致。</p>
-      <div class="grid-2" style="align-items:center;">
-        <div>
-          <img id="cross-overview-img" class="fig-img" alt="Cross-Benchmark Overview" />
-        </div>
-        <div class="table-wrap" style="max-height:420px;overflow-y:auto;" id="task-summary-table"></div>
-      </div>
+  <h2 class="sec"><span class="n">B</span>诊断图（每个 Benchmark 10 张）</h2>
+  <div class="fig-toolbar">
+    <p class="note" style="margin:0;">点击图片放大。“读图”表示数值从图上读出，其余数值来自 <code>results/*/tables</code>。</p>
+    <div class="seg" id="fig-mode">
+      <button class="active" data-mode="both">并排</button>
+      <button data-mode="sw">ScienceWorld</button>
+      <button data-mode="tw">TextWorldExpress</button>
     </div>
+  </div>
+  <div id="fig-gallery"></div>
 
-    <div class="card section">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-        <div>
-          <h2 class="sec-title" style="margin-bottom:4px;">全套 20 张实验诊断图逐对解析（Fig 01 – Fig 10）</h2>
-          <p style="margin:0;color:var(--muted);font-size:13px;">点击任意图片可<b>全屏高清放大</b>；支持双 Bench 左右并排对照或单独查看。</p>
-        </div>
-        <div class="btn-group" id="chart-mode-btns">
-          <button class="btn active" data-mode="both">双 Bench 并排对比</button>
-          <button class="btn" data-mode="sw">仅 ScienceWorld</button>
-          <button class="btn" data-mode="tw">仅 TextWorldExpress</button>
-        </div>
-      </div>
-      <div id="fig-gallery"></div>
-    </div>
+  <h2 class="sec"><span class="n">C</span>零奖励步分类（E11）</h2>
+  <div class="table-wrap" id="e11-table"></div>
+  <p class="caption">分类按顺序互斥：非法动作 → 原地重复（观察未变，或同一观察下重复同一动作）→ 有效铺垫（未来 5 步有奖励，或该局成功）→ 瞎逛（其余）。</p>
 
-    <div class="grid-2 section">
-      <div class="card">
-        <h3 class="sec-title">E11 零奖励五分类量化对比（SW vs TW）</h3>
-        <div class="table-wrap" id="e11-compare-table"></div>
-      </div>
-      <div class="card">
-        <h3 class="sec-title">E16 控制变量回归摘要（Episode 聚类稳健标准误）</h3>
-        <p class="sec-desc">控制任务类别、步数深度、CoT/Action 长度与动作合法性后，观察 I_t 与 H_C 是否仍显著。</p>
-        <div class="table-wrap" id="e16-compare-table"></div>
-      </div>
-    </div>
-  </section>
+  <h2 class="sec"><span class="n">D</span>控制变量回归（E16）</h2>
+  <div class="table-wrap" id="e16-table"></div>
+  <p class="caption">OLS，含任务固定效应，控制步数、CoT 与动作长度及合法性；episode 聚类稳健标准误。* $p&lt;0.05$，** $p&lt;0.01$。</p>
+</section>
 
-  <!-- ===================== TAB 3: TRAJECTORY EXPLORER ===================== -->
-  <section id="tab-explorer" class="tab-panel">
-    <div class="explorer-layout">
-      <aside class="ep-sidebar">
-        <div class="ep-filters">
-          <div style="font-weight:700;font-size:13px;display:flex;justify-content:space-between;">
-            <span>全部真实轨迹 (120 局)</span>
-            <span id="ep-count-badge" style="color:var(--primary);">120</span>
-          </div>
-          <select id="f-bench">
-            <option value="all">全部 Benchmark (SW + TW)</option>
-            <option value="scienceworld">ScienceWorld (60 局)</option>
-            <option value="textworld_express">TextWorldExpress (60 局)</option>
+<!-- ============================ EXPLORER ============================ -->
+<section id="explorer" class="tab-panel">
+  <div class="explorer">
+    <aside class="ep-side">
+      <div class="ep-filters">
+        <div style="display:flex;justify-content:space-between;font-weight:600;"><span>全部轨迹</span><span id="ep-count" class="dim"></span></div>
+        <select id="f-bench">
+          <option value="all">全部 Benchmark</option>
+          <option value="scienceworld">ScienceWorld</option>
+          <option value="textworld_express">TextWorldExpress</option>
+        </select>
+        <select id="f-task"></select>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+          <select id="f-succ">
+            <option value="all">全部结局</option>
+            <option value="succ">成功</option>
+            <option value="fail">失败</option>
           </select>
-          <select id="f-task"><option value="all">全部任务类别</option></select>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-            <select id="f-succ">
-              <option value="all">全部结局</option>
-              <option value="succ">仅成功局</option>
-              <option value="fail">仅失败局</option>
-            </select>
-            <select id="f-rec">
-              <option value="all">全部轨迹</option>
-              <option value="has_rec">含报错自救步</option>
-            </select>
-          </div>
-          <input id="f-search" type="text" placeholder="搜索 episode / 动作 / CoT 关键词..." />
+          <select id="f-rec">
+            <option value="all">全部</option>
+            <option value="has_rec">含 F→T 步</option>
+          </select>
         </div>
-        <div id="ep-list" class="ep-list"></div>
-      </aside>
+        <input id="f-search" type="text" placeholder="搜索 episode、动作或 CoT" />
+      </div>
+      <div id="ep-list" class="ep-list"></div>
+    </aside>
 
-      <div id="ep-detail">
-        <div class="card" id="ep-header-card"></div>
-        <div class="card section" id="ep-chart-card">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-            <div>
-              <h3 class="sec-title" style="margin:0;font-size:15px;">全轨迹指标演变图（点击任意步跳转详情）</h3>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <span style="font-size:12px;color:var(--muted);">CoT 逐词热力着色：</span>
-              <div class="btn-group" id="tok-color-mode">
-                <button class="btn active" data-cmode="entropy" style="padding:3px 9px;font-size:12px;">精确熵 H_C</button>
-                <button class="btn" data-cmode="dself" style="padding:3px 9px;font-size:12px;">Teacher Gap D_self</button>
-              </div>
+    <div>
+      <div class="panel" id="ep-header"></div>
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+          <div style="font-weight:600;">逐步指标（点击圆点跳到该步）</div>
+          <div style="display:flex;align-items:center;gap:8px;font-family:var(--sans);font-size:12.5px;color:var(--muted);">
+            CoT 着色
+            <div class="seg" id="tok-mode">
+              <button class="active" data-cmode="entropy">熵 H</button>
+              <button data-cmode="dself">Gap D</button>
             </div>
           </div>
-          <div id="ep-timeline-svg"></div>
-          <div id="tok-legend" class="legend-bar" style="margin-top:8px;"></div>
         </div>
-        <div id="ep-turns-list" class="section"></div>
+        <div id="ep-timeline"></div>
+        <div id="tok-legend" class="legend" style="margin-top:8px;"></div>
       </div>
+      <div id="ep-turns"></div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- ===================== TAB 4: CURATED CASES ===================== -->
-  <section id="tab-cases" class="tab-panel">
-    <div class="card" style="margin-bottom:16px;">
-      <h2 class="sec-title" style="margin-bottom:4px;">精选 6 大真实轨迹案例剖析（可直接用于组会投屏讲解）</h2>
-      <p style="margin:0;color:var(--muted);font-size:13px;">所有案例均直接抽自本次 Qwen3-8B 真实采集数据，完整呈现逐 Token 精确熵热力图（悬停任意词查看精确数值），点击右上角按钮可一键跳转查看该局完整上下文。</p>
+<!-- ============================ CASES ============================ -->
+<section id="cases" class="tab-panel">
+  <div class="prose">
+    <h2 class="sec">案例</h2>
+    <p class="note">以下各步均取自本次采集的数据。CoT 按逐 token 熵或 $D$ 着色，悬停查看数值。</p>
+  </div>
+  <div id="cases-box"></div>
+</section>
+
+<!-- ============================ SETUP ============================ -->
+<section id="setup" class="tab-panel">
+  <div class="prose">
+    <h2 class="sec"><span class="n">1</span>实验设置</h2>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr><td class="lbl">模型</td><td>Qwen3-8B，bf16，<code>enable_thinking=False</code>，显式 ReAct（<code>Thought:</code> / <code>Action:</code>）</td></tr>
+          <tr><td class="lbl">Prompt</td><td>零样本：只给接口说明（命令格式、前置条件、效果），不给示范轨迹，也不附每步的合法动作列表</td></tr>
+          <tr><td class="lbl">采样</td><td>vLLM，temperature 0.7，top_p 0.8，top_k 20；每步最多 256 token，每局最多 35 步</td></tr>
+          <tr><td class="lbl">离线打分</td><td>HF Transformers，4 次前向：有 CoT、空 Thought、中性 Thought、self-teacher；熵在全词表上以 fp32 计算；沿用生成时的 token ids，并断言各次前向的动作 token 逐位一致</td></tr>
+          <tr><td class="lbl">ScienceWorld</td><td>find-living-thing（L1）、chemistry-mix-paint-secondary-color（L2）、test-conductivity（L3），各 20 个 variation，无简化</td></tr>
+          <tr><td class="lbl">TextWorldExpress</td><td>coin（L1，7 个地点）、mapreader（L2，11 个地点）、cookingworld（L3，5 个地点、3 种食材），dev fold，各 20 个种子</td></tr>
+          <tr><td class="lbl">动作合法性</td><td>SW：执行后未出现失败回显；TWX：命中环境的合法动作（大小写不敏感）</td></tr>
+          <tr><td class="lbl">硬件</td><td>1× A800-80GB；torch 2.11，vLLM 0.25.1，transformers 5.14.1</td></tr>
+        </tbody>
+      </table>
     </div>
-    <div id="cases-container"></div>
-  </section>
 
-  <!-- ===================== TAB 5: PROTOCOL ===================== -->
-  <section id="tab-protocol" class="tab-panel">
-    <div class="grid-2">
-      <div class="card">
-        <h2 class="sec-title">核心实验参数与防泄露设计</h2>
-        <div class="table-wrap">
-          <table>
-            <tbody>
-              <tr><td><b>基座模型</b></td><td><code>Qwen/Qwen3-8B</code> (BF16, <code>enable_thinking=False</code>, ReAct <code>Thought:/Action:</code>)</td></tr>
-              <tr><td><b>硬件平台</b></td><td>1× NVIDIA A800-SXM4-80GB (`torch 2.11.0+cu130`, `vllm 0.25.1`, `transformers 5.14.1`)</td></tr>
-              <tr><td><b>Stage 1 Rollout</b></td><td>vLLM + Prefix Caching, <code>temp=0.7, top_p=0.8, top_k=20, presence_penalty=0.0</code>, <code>max_tokens=256</code>, <code>max_turns=35</code></td></tr>
-              <tr><td><b>Stage 2 离线打分</b></td><td>HF Transformers, <code>scoring_temperature=1.0</code>（无截断）, <code>batch_size=1</code>（零 BF16 padding 抖动）, 目标切片 FP32 算精确全词表熵（单位 nats）</td></tr>
-              <tr><td><b>Token 边界保护</b></td><td>直接沿用生成 <code>token_ids</code>，严格剥离 <code>Thought:</code> 与 <code>\nAction:</code> 模板字，强断言保证 Pass 1/2/3 Action token ID 逐位一致</td></tr>
-              <tr><td><b>ScienceWorld 任务集</b></td><td>原版无简化 (<code>simplificationStr=""</code>), L1 <code>find-living-thing</code> / L2 <code>chemistry-mix-paint-secondary-color</code> / L3 <code>test-conductivity</code> × 20 var</td></tr>
-              <tr><td><b>TextWorldExpress 任务集</b></td><td><code>gameFold="dev"</code>（保留 train/test 给未来 RL）, L1 <code>coin(7)</code> / L2 <code>mapreader(11)</code> / L3 <code>cookingworld(5,3)</code> × 20 seeds</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2 class="sec-title">E01 – E18 诊断清单完成进度</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>编号</th><th>实验项目</th><th>状态</th><th>核心产出</th></tr></thead>
-            <tbody>
-              <tr><td><b>E01–E02</b></td><td>环境试水 + 120 局正式批量采集</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>解析率 100%，零截断</td></tr>
-              <tr><td><b>E03–E04</b></td><td>桥梁函数 I_t 计算与分层分布</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>Fig01, Fig02 + 分解证明</td></tr>
-              <tr><td><b>E05–E06</b></td><td>CoT 与 Action 全词表精确熵</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>Fig03 + 13 万 token parquet</td></tr>
-              <tr><td><b>E07–E08</b></td><td>Reward 覆盖率 + 未来 G3/G5</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>含当前 & 严格未来两套</td></tr>
-              <tr><td><b>E09</b></td><td>按 Episode 聚类相关性检验</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>Fig05 + 1000次 Bootstrap CI</td></tr>
-              <tr><td><b>E10</b></td><td>两指标联合 + 无泄露预测 CV</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>Fig06 + 4象限拆解</td></tr>
-              <tr><td><b>E11</b></td><td>零奖励五分类自动化解剖</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>Fig04 + 跨 Bench 排序一致</td></tr>
-              <tr><td><b>E12</b></td><td>统一交付打包与异常案例</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>本交互式 HTML 报告 + JSONL</td></tr>
-              <tr><td><b>E13</b></td><td>空 vs 中性无 CoT 基线稳健性</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>Fig07 (符号一致 87–92%)</td></tr>
-              <tr><td><b>E14</b></td><td>每 Bench 80 步人工语义盲标</td><td><span class="badge b-amber">⏳ 已导出盲标CSV</span></td><td>待团队人工填完 3 列 0/1</td></tr>
-              <tr><td><b>E15</b></td><td>失败前 5 步长程演化曲线</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>Fig08 (揭示低熵麻木趋势)</td></tr>
-              <tr><td><b>E16</b></td><td>控制变量聚类稳健回归</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>控制难度/步数/长度回归表</td></tr>
-              <tr><td><b>E17</b></td><td>CoT 位置熵（开头/中部/结尾）</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>Fig09 (发现跨Bench X型交叉)</td></tr>
-              <tr><td><b>E18</b></td><td>State-OPD Self-Teacher Gap</td><td><span class="badge b-emerald">✅ 已完成</span></td><td>Fig10 (实锤65-68%符号反转)</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+    <h2 class="sec"><span class="n">2</span>E01–E18 完成情况</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>编号</th><th>内容</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>E01</td><td>试水（每 Bench 5 局）</td><td><span class="tag warn">未达门槛</span></td><td>解析率 100%；合法率 28.0% / 53.1%，低于 60%；决定照常全量</td></tr>
+          <tr><td>E02</td><td>正式采集（60 + 60 局）</td><td><span class="tag pos">完成</span></td><td>合法率 42.5% / 59.9%；打转步 33.5% / 14.6%</td></tr>
+          <tr><td>E03–E04</td><td>$I_t$ 计算与分层</td><td><span class="tag pos">完成</span></td><td>图 1、图 2</td></tr>
+          <tr><td>E05–E06</td><td>CoT 与动作的逐 token 熵</td><td><span class="tag pos">完成</span></td><td>图 3；token 级数据见 <code>token_stats.parquet</code></td></tr>
+          <tr><td>E07–E08</td><td>奖励覆盖率与未来收益</td><td><span class="tag pos">完成</span></td><td>含当前步与严格未来两种口径</td></tr>
+          <tr><td>E09</td><td>episode 聚类相关</td><td><span class="tag pos">完成</span></td><td>图 5</td></tr>
+          <tr><td>E10</td><td>联合分组与无泄露预测</td><td><span class="tag pos">完成</span></td><td>图 6；结果部分受任务构成影响</td></tr>
+          <tr><td>E11</td><td>零奖励步分类</td><td><span class="tag pos">完成</span></td><td>图 4</td></tr>
+          <tr><td>E12</td><td>数据打包与报告</td><td><span class="tag pos">完成</span></td><td>本页与 JSONL / parquet 数据</td></tr>
+          <tr><td>E13</td><td>空与中性基线</td><td><span class="tag pos">完成</span></td><td>图 7</td></tr>
+          <tr><td>E14</td><td>人工语义盲标（每 Bench 80 步）</td><td><span class="tag">未完成</span></td><td>盲标 CSV 已导出，待人工标注</td></tr>
+          <tr><td>E15</td><td>失败前 5 步</td><td><span class="tag pos">完成</span></td><td>图 8；SW 的下降趋势与步数深度混杂</td></tr>
+          <tr><td>E16</td><td>控制变量回归</td><td><span class="tag pos">完成</span></td><td>图表页 D 节</td></tr>
+          <tr><td>E17</td><td>CoT 内部位置熵</td><td><span class="tag pos">完成</span></td><td>图 9；混有上一步是否报错</td></tr>
+          <tr><td>E18</td><td>Teacher gap</td><td><span class="tag warn">部分完成</span></td><td>self-teacher 完成；32B strong teacher 与格式对照未运行</td></tr>
+        </tbody>
+      </table>
     </div>
-  </section>
+  </div>
+</section>
 </main>
 
-<!-- Fullscreen Lightbox & Token Tooltip -->
-<div id="lightbox" class="lightbox" onclick="closeLightbox()"><img id="lightbox-img" src="" alt="Zoomed Figure" /></div>
+<div id="lightbox" class="lightbox" onclick="closeLightbox()"><img id="lightbox-img" src="" alt="放大的图" /></div>
 <div id="tok-tip"></div>
 
 <script>
-const REPORT_DATA = {data_json};
+const DATA = __REPORT_DATA__;
 
-const state = {{
-  chartMode: "both",
-  selectedEpId: REPORT_DATA.tw.episodes.find(e => e.id === "textworld_express__coin__s1000")?.id || REPORT_DATA.sw.episodes[0].id,
+const KATEX_OPTS = {
+  delimiters: [
+    { left: "$$", right: "$$", display: true },
+    { left: "$", right: "$", display: false },
+  ],
+  ignoredClasses: ["cot-box", "obs", "act-cmd", "ep-list", "no-math"],
+  throwOnError: false,
+};
+function typeset(el) {
+  if (el && window.renderMathInElement) renderMathInElement(el, KATEX_OPTS);
+}
+
+const state = {
+  figMode: "both",
+  selectedEpId: "textworld_express__coin__s1000",
   highlightTurn: null,
-  tokColorMode: "entropy",
-}};
-
-const ALL_EPISODES = [...REPORT_DATA.sw.episodes, ...REPORT_DATA.tw.episodes];
+  tokMode: "entropy",
+};
+const ALL_EPISODES = [...DATA.sw.episodes, ...DATA.tw.episodes];
 const EP_MAP = Object.fromEntries(ALL_EPISODES.map(e => [e.id, e]));
+const BENCHES = [["sw", "ScienceWorld"], ["tw", "TextWorldExpress"]];
+const CAT_ZH = {
+  nonzero_reward: "有奖励",
+  effective_setup: "有效铺垫",
+  aimless_explore: "瞎逛",
+  illegal_action: "非法动作",
+  repeat_noop: "原地重复",
+  parse_fail: "解析失败",
+};
 
-function esc(s) {{
-  return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-}}
+function esc(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+const fx = (v, d) => (v == null || Number.isNaN(v) ? "–" : Number(v).toFixed(d));
+const pct = (v, d = 1) => (v == null ? "–" : `${Number(v).toFixed(d)}%`);
+const ci = arr => `${fx(arr[0], 2)} <span class="ci">[${fx(arr[1], 2)}, ${fx(arr[2], 2)}]</span>`;
 
-// ================= Tab Switching =================
-document.querySelectorAll(".tab-btn").forEach(btn => {{
-  btn.addEventListener("click", () => {{
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-    btn.classList.add("active");
-    document.getElementById(btn.dataset.tab).classList.add("active");
-    window.scrollTo({{ top: 0, behavior: "smooth" }});
-  }});
-}});
+// ---------------- Tabs ----------------
+const TAB_IDS = ["summary", "figures", "explorer", "cases", "setup"];
+function showTab(id) {
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === id));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === id));
+}
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    showTab(btn.dataset.tab);
+    history.replaceState(null, "", "#" + btn.dataset.tab);
+    window.scrollTo({ top: 0 });
+  });
+});
 
-function openLightbox(src) {{
+function openLightbox(src) {
   document.getElementById("lightbox-img").src = src;
   document.getElementById("lightbox").classList.add("open");
-}}
-function closeLightbox() {{
+}
+function closeLightbox() {
   document.getElementById("lightbox").classList.remove("open");
-}}
-document.addEventListener("keydown", e => {{ if (e.key === "Escape") closeLightbox(); }});
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeLightbox(); });
 
-function jumpToEpisode(epId, turnId = null) {{
-  if (!EP_MAP[epId]) return;
-  state.selectedEpId = epId;
-  state.highlightTurn = turnId;
-  // Reset filters so episode is visible
-  document.getElementById("f-bench").value = "all";
-  populateTaskFilter();
-  document.getElementById("f-task").value = "all";
-  document.getElementById("f-succ").value = "all";
-  document.getElementById("f-rec").value = "all";
-  document.getElementById("f-search").value = "";
-  renderEpisodeList();
-  renderEpisodeDetail();
-  document.querySelector('[data-tab="tab-explorer"]').click();
-  if (turnId !== null) {{
-    setTimeout(() => {{
-      const el = document.getElementById(`turn-card-${{turnId}}`);
-      if (el) el.scrollIntoView({{ behavior: "smooth", block: "center" }});
-    }}, 80);
-  }}
-}}
-
-// ================= Tab 1: Overview =================
-function renderOverview() {{
-  const sw = REPORT_DATA.sw.overview;
-  const tw = REPORT_DATA.tw.overview;
-
-  document.getElementById("kpi-grid").innerHTML = `
-    <div class="card">
-      <div class="kpi-label">总诊断样本规模</div>
-      <div class="kpi-val">${{sw.n_ep + tw.n_ep}} 局 · ${{(sw.n_turn + tw.n_turn).toLocaleString()}} 步</div>
-      <div class="kpi-sub">SW: ${{sw.n_ep}}局/${{sw.n_turn}}步 (均${{sw.avg_turns}}步) · TW: ${{tw.n_ep}}局/${{tw.n_turn}}步 (均${{tw.avg_turns}}步)</div>
-    </div>
-    <div class="card">
-      <div class="kpi-label">任务表现与奖励稀疏度</div>
-      <div class="kpi-val">SW ${{sw.succ_pct}}% / TW ${{tw.succ_pct}}%</div>
-      <div class="kpi-sub">0 奖励步占比：SW <b>${{sw.r_zero_pct}}%</b> · TW <b>${{tw.r_zero_pct}}%</b>（合法率 ${{sw.valid_pct}}% / ${{tw.valid_pct}}%）</div>
-    </div>
-    <div class="card">
-      <div class="kpi-label">I_t ≈ No-CoT Surprisal</div>
-      <div class="kpi-val">ρ = ${{sw.rho_surp_emp}} / ${{tw.rho_surp_emp}}</div>
-      <div class="kpi-sub">Action 熵中位数 <b>0.000</b>，所有拿分步 (r&gt;0) I_t 中位数均为 <b>0.0000</b></div>
-    </div>
-    <div class="card">
-      <div class="kpi-label">原公式 A=w·D 符号反转风险</div>
-      <div class="kpi-val" style="color:var(--rose);">${{sw.dbl_neg_pct}}% / ${{tw.dbl_neg_pct}}%</div>
-      <div class="kpi-sub">负向 CoT 中同时 D_self&lt;0 的 token 比例（误乘负权重将重奖错词）</div>
-    </div>
-  `;
-
-  const findings = [
-    {{
-      cls: "rose",
-      badge: '<span class="badge b-rose">❌ 证伪原假设：高 I_t ≠ 好 CoT</span>',
-      title: "1. 桥梁函数 I_t 在两个 Bench、全部 6 个任务里均与即时奖励显著负相关，本质是“No-CoT 惊奇度”",
-      body: "拆解公式后发现：模型写完 Thought 后，写 Action 几乎是 99% 确定性照抄答案（<code>log π_A(a|h,z)</code> 与 <code>H_A</code> 中位数均为 <b>0.0000</b>），导致 <code>I_t ≈ -log π_A(a|h)/|a|</code>（Spearman 高达 <b>0.976 / 0.973</b>）。拿分的临门一脚（如 <code>take coin</code>、<code>focus on foil</code>）太显而易见，不写 CoT 也会做，所以 <b>r&gt;0 步中位数 I_t = 0.0000</b>；而高 I_t（3–20）大量落在迷茫瞎逛（E11 <code>aimless_explore</code> 均值第一高）。E13 验证空/中性基线符号一致率高达 <b>92.2% / 87.1%</b>，证明这是定义本身特性，非格式噪音。",
-      chips: [
-        `SW I_t vs r_t: <b>-0.217</b>`,
-        `TW I_t vs r_t: <b>-0.268</b>`,
-        `6/6 任务内部全负: <b>-0.15 ~ -0.28</b>`,
-        `E13 符号一致: <b>${{sw.e13_sign_pct}}% / ${{tw.e13_sign_pct}}%</b>`,
-      ]
-    }},
-    {{
-      cls: "rose",
-      badge: '<span class="badge b-rose">❌ 证伪原表第 4 行 & E10 乘积增益</span>',
-      title: "2. I_t &lt; 0 极稀少（仅 3%），且 I_t ≤ 0 组表现全面碾压 I_t &gt; 0；乘积项 I_t × r_t 无增量预测力",
-      body: "超过 92% 的步子 <code>I_t &gt; 0</code>，真正 <code>I_t &lt; 0</code> 仅占 <b>2.7% (SW) / 3.4% (TW)</b> 且数值微弱（均值仅 -0.015 ~ -0.021），基本是普通步的微小数值波动。看 E10 2×2 分组：<code>I_t ≤ 0</code> 代表 CoT 与直觉意见一致的“稳步”，其动作合法率和成功率远超 <code>I_t &gt; 0</code>。无泄露 5-fold GroupKFold CV 显示加入 <code>I_t × r_t</code> 在 SW 上预测成功 AUROC 反而下降（0.621 → 0.596），TW 控制任务难度后 I_t 回归 p = 0.653 不显著。",
-      chips: [
-        `I_t &lt; 0 占比: <b>${{sw.I_emp_neg_pct}}% / ${{tw.I_emp_neg_pct}}%</b>`,
-        `SW Low_HC &amp; I≤0 合法率: <b>84.2%</b> (vs I&gt;0 <b>40.7%</b>)`,
-        `TW I≤0 成功率: <b>57–60%</b> (vs I&gt;0 <b>21–22%</b>)`,
-      ]
-    }},
-    {{
-      cls: "violet",
-      badge: '<span class="badge b-violet">💡 本次最大新发现（跨 Bench 完全一致）</span>',
-      title: "3. “上一步报错后的成功自救 (False → True)”才是 CoT 真正发力的黄金时刻！",
-      body: "把上一步刚报错（<code>prev_valid = False</code>）之后的步子拆成“继续犯错 (F→F)”与“成功跳出自救 (F→T)”：两个游戏同时爆出惊人的同向大跳变——继续犯错时模型低熵麻木重复（SW <code>I_t=0.23, H_tail=0.140</code>），而成功自救时 <b>I_t 直接暴涨 7.3 倍（SW: 0.23 → 1.70）和 2.2 倍（TW: 0.87 → 1.92）</b>，同时 CoT 中后段熵明显抬升！说明 CoT 真正的因果价值不在顺风步，而在<b>卡壳报错后扭转动作方向</b>。",
-      chips: [
-        `SW 自救 I_t: <b>0.23 → 1.70 (7.3×)</b>`,
-        `TW 自救 I_t: <b>0.87 → 1.92 (2.2×)</b>`,
-        `SW 自救 H_tail: <b>0.140 → 0.197</b>`,
-        `TW 自救 H_tail: <b>0.163 → 0.265</b>`,
-      ]
-    }},
-    {{
-      cls: "amber",
-      badge: '<span class="badge b-amber">⚠️ 修正熵加权粒度（E05/E06/E15/E17）</span>',
-      title: "4. Action 熵≈0 验证了“只看 CoT 熵”，但整段均值过粗——CoT 开头与中后段呈跨 Bench X 型交叉",
-      body: "CoT 均值熵为 <b>0.153 / 0.163 nats</b>，而 Action 均值熵仅 <b>0.015 / 0.026 nats</b>，证实决策不确定性几乎全在 CoT。但全段均值 <code>H_C_mean</code> 控制任务难度后几乎不显著。按位置切开（Fig09）后两个游戏画出完全一样的 <b>X 型交叉</b>：非法动作在 <b>CoT 开头 (10%–20%)</b> 熵高达合法动作的 <b>2 倍</b>（<code>H_head vs valid: -0.227 / -0.293</code>，主要由报错后慌乱驱动），而中后段熵反而低于合法动作；E15 失败倒计时显示临近失败时熵略降（陷入低熵死循环）。",
-      chips: [
-        `CoT vs Action 熵: <b>0.16 vs 0.02 nats</b>`,
-        `H_head vs valid: <b>-0.227 (SW) / -0.293 (TW)</b>`,
-        `E15 失败末尾 H_C_p90: <b>下降（固执化）</b>`,
-      ]
-    }},
-    {{
-      cls: "rose",
-      badge: '<span class="badge b-rose">❌ 实锤符号反转 + Self-OPD 失忆</span>',
-      title: "5. 8B 删历史 CoT 做 Self-Teacher 98% 为负，且实锤原公式 A_C = w·D 会把近 7 成错词“负负得正”重奖",
-      body: "同一 Qwen3-8B 去掉历史 CoT 后，失去前面推理上下文，98% 的 Turn 均值 <code>D_self &lt; 0</code>（均值 -1.12 / -1.55），步数越深越负（ρ = -0.35 / -0.28），控制步数和任务后对动作合法性甚至显著负相关。更致命的是，在负向 CoT（<code>A_proxy·I_t &lt; 0</code>）中，<b>68.4% (SW)</b> 与 <b>65.4% (TW)</b> 的 token 同时满足 <code>D_self &lt; 0</code>——乘以负权重将直接变成极大正奖励！",
-      chips: [
-        `D_self &lt; 0 占比: <b>98.4% (SW) / 97.9% (TW)</b>`,
-        `D_self vs turn_id: <b>-0.349 / -0.276</b>`,
-        `负负得正冲突比例: <b>${{sw.dbl_neg_pct}}% / ${{tw.dbl_neg_pct}}%</b>`,
-      ]
-    }},
-  ];
-
-  document.getElementById("findings-container").innerHTML = findings.map(f => `
-    <div class="finding-card ${{f.cls}}">
-      <div class="finding-head">
-        <h3 class="finding-title">${{f.title}}</h3>
-        ${{f.badge}}
-      </div>
-      <p class="finding-body">${{f.body}}</p>
-      <div class="stat-strip">${{f.chips.map(c => `<span class="stat-chip">${{c}}</span>`).join("")}}</div>
-    </div>
-  `).join("");
-
-  // Render Recovery Comparison SVG + Table
-  renderRecoveryVisual();
-}}
-
-function renderRecoveryVisual() {{
-  const swRec = REPORT_DATA.sw.recovery;
-  const twRec = REPORT_DATA.tw.recovery;
-  const swFF = swRec[0], swFT = swRec[1], twFF = twRec[0], twFT = twRec[1];
-
-  const maxI = Math.max(swFF.I_mean, swFT.I_mean, twFF.I_mean, twFT.I_mean, 2.2);
-  const maxH = Math.max(swFF.H_tail, swFT.H_tail, twFF.H_tail, twFT.H_tail, 0.30);
-
-  function barChart(title, items, maxV, unit, xOff) {{
-    const w = 260, h = 165, padB = 34, padT = 26, chartH = h - padB - padT;
-    let s = `<g transform="translate(${{xOff}},0)">`;
-    s += `<text x="${{w/2}}" y="15" text-anchor="middle" font-size="12" font-weight="700" fill="#0f172a">${{title}}</text>`;
-    s += `<line x1="20" y1="${{h-padB}}" x2="${{w-10}}" y2="${{h-padB}}" stroke="#cbd5e1" stroke-width="1"/>`;
-    const bw = 42, gap = 16;
-    items.forEach((it, idx) => {{
-      const bh = Math.max(2, (it.val / maxV) * chartH);
-      const x = 32 + idx * (bw + gap);
-      const y = h - padB - bh;
-      s += `<rect x="${{x}}" y="${{y}}" width="${{bw}}" height="${{bh}}" rx="5" fill="${{it.color}}" opacity="0.9"/>`;
-      s += `<text x="${{x+bw/2}}" y="${{y-5}}" text-anchor="middle" font-size="11" font-weight="700" fill="#0f172a">${{it.val.toFixed(2)}}</text>`;
-      s += `<text x="${{x+bw/2}}" y="${{h-padB+14}}" text-anchor="middle" font-size="10.5" fill="#475569">${{it.lbl1}}</text>`;
-      s += `<text x="${{x+bw/2}}" y="${{h-padB+26}}" text-anchor="middle" font-size="9.5" fill="#64748b">${{it.lbl2}}</text>`;
-    }});
-    s += `</g>`;
-    return s;
-  }}
-
-  const svg = `
-    <svg viewBox="0 0 560 175" style="width:100%;height:auto;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
-      ${{barChart("I_empty 均值（报错后继续错 vs 自救）", [
-        {{ val: swFF.I_mean, lbl1: "SW F→F", lbl2: `n=${{swFF.n}}`, color: "#94a3b8" }},
-        {{ val: swFT.I_mean, lbl1: "SW F→T", lbl2: `n=${{swFT.n}}`, color: "#7c3aed" }},
-        {{ val: twFF.I_mean, lbl1: "TW F→F", lbl2: `n=${{twFF.n}}`, color: "#94a3b8" }},
-        {{ val: twFT.I_mean, lbl1: "TW F→T", lbl2: `n=${{twFT.n}}`, color: "#059669" }},
-      ], maxI, "", 10)}}
-      ${{barChart("CoT 后段熵 H_tail (nats)", [
-        {{ val: swFF.H_tail, lbl1: "SW F→F", lbl2: "麻木重复", color: "#94a3b8" }},
-        {{ val: swFT.H_tail, lbl1: "SW F→T", lbl2: "探索纠错", color: "#7c3aed" }},
-        {{ val: twFF.H_tail, lbl1: "TW F→F", lbl2: "麻木重复", color: "#94a3b8" }},
-        {{ val: twFT.H_tail, lbl1: "TW F→T", lbl2: "探索纠错", color: "#059669" }},
-      ], maxH, "nats", 290)}}
-    </svg>
-  `;
-  document.getElementById("recovery-svg-box").innerHTML = svg;
-
+// ---------------- Summary ----------------
+function renderSummary() {
+  const a = DATA.sw.overview, b = DATA.tw.overview;
   const rows = [
-    ...swRec.map(r => ({{ bench: "SW", ...r }})),
-    ...twRec.map(r => ({{ bench: "TW", ...r }})),
+    ["局数 / 步数", o => `${o.n_ep} / ${o.n_turn.toLocaleString()}`],
+    ["平均每局步数", o => fx(o.avg_turns, 1)],
+    ["格式解析成功率", o => pct(o.parse_pct)],
+    ["动作合法率", o => pct(o.valid_pct)],
+    ["终局成功率", o => pct(o.succ_pct)],
+    ["平均终局得分（归一化）", o => fx(o.score_mean, 3)],
+    ["$r_t>0$ / $r_t=0$ 的步", o => `${pct(o.r_pos_pct)} / ${pct(o.r_zero_pct)}`],
+    ["打转步", o => pct(o.loop_pct)],
+    ["$I_t$ 均值 / 中位数 / P90", o => `${fx(o.I_emp_mean, 3)} / ${fx(o.I_emp_p50, 3)} / ${fx(o.I_emp_p90, 2)}`],
+    ["$I_t>0$ / $I_t<0$ 的步", o => `${pct(o.I_emp_pos_pct)} / ${pct(o.I_emp_neg_pct)}`],
+    ["$r_t>0$ 的步的 $I_t$ 中位数", o => fx(o.r_pos_I_med, 4)],
+    ["$\\bar H^C_t$ 均值（nats）", o => fx(o.H_C_mean, 3)],
+    ["$\\bar H^A_t$ 均值（nats）；$\\bar H^A_t=0$ 的步", o => `${fx(o.H_A_mean, 3)}；${pct(o.H_A_zero_pct)}`],
+    ["$\\bar D^{\\mathrm{self}}_t$ 均值；$\\bar D^{\\mathrm{self}}_t<0$ 的步", o => `${fx(o.D_self_mean, 2)}；${pct(o.D_neg_pct)}`],
   ];
-  document.getElementById("recovery-table-box").innerHTML = `
+  document.getElementById("stats-table").innerHTML = `
     <table>
-      <thead><tr><th>Bench</th><th>状态转移</th><th class="num">n</th><th class="num">I_mean</th><th class="num">H_head</th><th class="num">H_tail</th><th class="num">G5_strict</th></tr></thead>
-      <tbody>
-        ${{rows.map(r => `
-          <tr style="${{(!r.pv && r.av) ? 'background:#f5f3ff;font-weight:600;' : ''}}">
-            <td>${{r.bench}}</td>
-            <td>${{r.tag}}</td>
-            <td class="num">${{r.n}}</td>
-            <td class="num">${{r.I_mean.toFixed(3)}}</td>
-            <td class="num">${{r.H_head.toFixed(3)}}</td>
-            <td class="num">${{r.H_tail.toFixed(3)}}</td>
-            <td class="num">${{r.G5s_mean.toFixed(3)}}</td>
-          </tr>
-        `).join("")}}
-      </tbody>
+      <thead><tr><th></th><th class="num">ScienceWorld</th><th class="num">TextWorldExpress</th></tr></thead>
+      <tbody>${rows.map(([k, f]) => `<tr><td>${k}</td><td class="num">${f(a)}</td><td class="num">${f(b)}</td></tr>`).join("")}</tbody>
     </table>
-  `;
-}}
+    <p class="caption">表 1　基础统计。$I_t$ 为逐 token 平均的对数概率差（nats），$\\bar D^{\\mathrm{self}}_t$ 为一步内 token 的均值。</p>`;
 
-// ================= Tab 2: Charts & Tables =================
-function renderChartsTab() {{
-  const cImg = document.getElementById("cross-overview-img");
-  cImg.src = REPORT_DATA.cross_fig;
-  cImg.onclick = () => openLightbox(REPORT_DATA.cross_fig);
+  document.getElementById("rho-surp").textContent = `${fx(a.rho_surp_emp, 3)} / ${fx(b.rho_surp_emp, 3)}`;
+  document.getElementById("sign-agree").textContent = `${pct(DATA.sw.fch.sign_agree_pct)} / ${pct(DATA.tw.fch.sign_agree_pct)}`;
+  document.getElementById("c-small").textContent = `${pct(DATA.sw.fch.C_small_pct)} / ${pct(DATA.tw.fch.C_small_pct)}`;
+  document.getElementById("loop-lowh").textContent = `${pct(DATA.sw.fch.loop_lowH_invalid_pct, 0)} / ${pct(DATA.tw.fch.loop_lowH_invalid_pct, 0)}`;
+  document.getElementById("loop-other").textContent = `${pct(DATA.sw.fch.loop_other_invalid_pct, 0)} / ${pct(DATA.tw.fch.loop_other_invalid_pct, 0)}`;
+  document.getElementById("turn-corr").textContent =
+    `${fx(DATA.sw.fch.turn_corr_mean, 3)}（SW，${pct(DATA.sw.fch.turn_corr_neg_pct)} 的步为负）/ ${fx(DATA.tw.fch.turn_corr_mean, 3)}（TWX，${pct(DATA.tw.fch.turn_corr_neg_pct)}）`;
 
-  // Per-task breakdown table
-  const allTasks = [...REPORT_DATA.sw.tasks, ...REPORT_DATA.tw.tasks];
-  document.getElementById("task-summary-table").innerHTML = `
+  // Table 2: transitions after an invalid step
+  const REC_LABEL = {
+    FF: "F→F", FF_loop: "其中：打转步", FF_new: "其中：换了新动作",
+    FT: "F→T", TF: "T→F", TT: "T→T",
+  };
+  const recBy = k => Object.fromEntries(DATA[k].recovery.map(r => [r.key, r]));
+  const rs = recBy("sw"), rt = recBy("tw");
+  const recCells = r => `<td class="num">${r.n}</td><td class="num">${fx(r.I_mean, 3)}</td><td class="num">${fx(r.I_med, 3)}</td><td class="num">${fx(r.H_tail, 3)}</td>`;
+  const recRow = k => `<tr class="${k.startsWith("FF_") ? "subrow" : ""}${k === "FT" ? " em" : ""}"><td>${REC_LABEL[k]}</td>${recCells(rs[k])}${recCells(rt[k])}</tr>`;
+  const csw = DATA.sw.recovery_ci, ctw = DATA.tw.recovery_ci;
+  document.getElementById("recovery-table").innerHTML = `
     <table>
       <thead>
-        <tr>
-          <th>Bench</th><th>层级 / 任务</th><th class="num">成功率</th><th class="num">均分</th>
-          <th class="num">合法率</th><th class="num">I中位</th><th class="num">ρ(I,r)</th><th class="num">ρ(H_head,valid)</th>
-        </tr>
+        <tr class="group"><th></th><th colspan="4">ScienceWorld</th><th colspan="4">TextWorldExpress</th></tr>
+        <tr><th>转移</th><th class="num">n</th><th class="num">$I_t$ 均值</th><th class="num">中位数</th><th class="num">$H^C$ tail</th><th class="num">n</th><th class="num">$I_t$ 均值</th><th class="num">中位数</th><th class="num">$H^C$ tail</th></tr>
       </thead>
       <tbody>
-        ${{allTasks.map(t => `
-          <tr>
-            <td><span class="badge ${{t.benchmark==='ScienceWorld'?'b-sky':'b-emerald'}}">${{t.benchmark==='ScienceWorld'?'SW':'TW'}}</span></td>
-            <td><b>${{t.tier}}</b> <code>${{t.task_id}}</code></td>
-            <td class="num">${{t.succ_pct}}%</td>
-            <td class="num">${{t.score_mean.toFixed(3)}}</td>
-            <td class="num">${{t.valid_pct}}%</td>
-            <td class="num">${{t.I_med.toFixed(3)}}</td>
-            <td class="num ${{t.rho_I_r < 0 ? 'neg' : 'pos'}}">${{t.rho_I_r ?? '-'}}</td>
-            <td class="num ${{t.rho_Hhead_valid < 0 ? 'neg' : 'pos'}}">${{t.rho_Hhead_valid ?? '-'}}</td>
-          </tr>
-        `).join("")}}
+        ${["FF", "FF_loop", "FF_new", "FT", "TF", "TT"].map(recRow).join("")}
+        <tr class="sep"><td>F→T 与 F→F 的均值比</td><td class="num" colspan="4">${ci(csw.FT_vs_FF)}</td><td class="num" colspan="4">${ci(ctw.FT_vs_FF)}</td></tr>
+        <tr><td>F→T 与 F→F（新动作）的均值比</td><td class="num" colspan="4">${ci(csw.FT_vs_FF_new)}</td><td class="num" colspan="4">${ci(ctw.FT_vs_FF_new)}</td></tr>
       </tbody>
-    </table>
-  `;
+    </table>`;
 
-  // E11 Comparison table
-  const sw11 = Object.fromEntries(REPORT_DATA.sw.tables.e11_zero_reward.map(r => [r.zero_reward_category, r]));
-  const tw11 = Object.fromEntries(REPORT_DATA.tw.tables.e11_zero_reward.map(r => [r.zero_reward_category, r]));
-  const cats = [
-    ["effective_setup", "有效铺垫 (effective_setup)"],
-    ["aimless_explore", "盲目瞎逛 (aimless_explore)"],
-    ["illegal_action", "非法动作 (illegal_action)"],
-    ["repeat_noop", "原地重复 (repeat_noop)"],
-  ];
-  document.getElementById("e11-compare-table").innerHTML = `
+  // Table 3: f(C, H) groups
+  const GROUP_LABEL = {
+    "pos|high": "$C_t>0.01$，高熵", "pos|low": "$C_t>0.01$，低熵",
+    "neg|high": "$C_t<-0.01$，高熵", "neg|low": "$C_t<-0.01$，低熵",
+  };
+  const groupRows = BENCHES.map(([k, name]) => DATA[k].fch.groups.map((g, i) => `
+    <tr class="${i === 0 && k === "tw" ? "sep" : ""}">
+      <td>${i === 0 ? name : ""}</td><td>${GROUP_LABEL[g.c + "|" + g.h]}</td>
+      <td class="num">${g.n}</td><td class="num">${fx(g.valid, 2)}</td><td class="num">${fx(g.G3s, 3)}</td>
+      <td class="num">${fx(g.succ, 2)}</td><td class="num">${fx(g.loop, 2)}</td><td class="num">${fx(g.D, 2)}</td>
+    </tr>`).join("")).join("");
+  document.getElementById("fch-table").innerHTML = `
     <table>
-      <thead><tr><th>零奖励分类</th><th class="num">SW n</th><th class="num">SW I均值/中位</th><th class="num">SW H_C</th><th class="num">TW n</th><th class="num">TW I均值/中位</th><th class="num">TW H_C</th></tr></thead>
-      <tbody>
-        ${{cats.map(([k, lbl]) => {{
-          const a = sw11[k] || {{}}, b = tw11[k] || {{}};
-          return `<tr>
-            <td><b>${{lbl}}</b></td>
-            <td class="num">${{a.n_turns ?? 0}}</td>
-            <td class="num">${{a.I_empty_mean != null ? a.I_empty_mean.toFixed(2)+' / '+a.I_empty_median.toFixed(3) : '-'}}</td>
-            <td class="num">${{a.H_C_mean != null ? a.H_C_mean.toFixed(3) : '-'}}</td>
-            <td class="num">${{b.n_turns ?? 0}}</td>
-            <td class="num">${{b.I_empty_mean != null ? b.I_empty_mean.toFixed(2)+' / '+b.I_empty_median.toFixed(3) : '-'}}</td>
-            <td class="num">${{b.H_C_mean != null ? b.H_C_mean.toFixed(3) : '-'}}</td>
-          </tr>`;
-        }}).join("")}}
-      </tbody>
-    </table>
-  `;
+      <thead><tr><th>Benchmark</th><th>组</th><th class="num">n</th><th class="num">合法率</th><th class="num">$G^{(3)}_t$</th><th class="num">成功率</th><th class="num">打转步</th><th class="num">$\\bar D^{\\mathrm{self}}_t$</th></tr></thead>
+      <tbody>${groupRows}</tbody>
+    </table>`;
 
-  // E16 Key terms regression comparison
-  const keyTerms = ["I_empty_norm", "H_C_mean", "H_C_p90", "action_valid_int"];
-  const sw16 = REPORT_DATA.sw.tables.e16_controlled_regression.filter(r => keyTerms.includes(r.term));
-  const tw16 = REPORT_DATA.tw.tables.e16_controlled_regression.filter(r => keyTerms.includes(r.term));
-  const map16 = (arr) => Object.fromEntries(arr.map(r => [`${{r.outcome}}|${{r.term}}`, r]));
-  const mSW = map16(sw16), mTW = map16(tw16);
-  const pairs16 = [
-    ["reward_raw", "I_empty_norm"],
-    ["G3_strict", "I_empty_norm"],
-    ["final_score_norm", "I_empty_norm"],
-    ["reward_raw", "H_C_mean"],
-    ["G3_strict", "H_C_p90"],
-    ["final_score_norm", "H_C_mean"],
-    ["reward_raw", "action_valid_int"],
-  ];
-  function fmtReg(r) {{
-    if (!r) return "-";
-    const sig = r.p_value < 0.01 ? "**" : (r.p_value < 0.05 ? "*" : "");
-    const cls = r.p_value < 0.05 ? (r.coef < 0 ? "neg" : "pos") : "";
-    return `<span class="${{cls}}">${{r.coef.toFixed(4)}}${{sig}}</span> <span style="color:#94a3b8;font-size:11px;">(p=${{r.p_value.toFixed(3)}})</span>`;
-  }}
-  document.getElementById("e16-compare-table").innerHTML = `
+  // Table 4: token-level D by entropy bin
+  const bins = DATA.sw.fch.token_bins.map((b0, i) => [b0, DATA.tw.fch.token_bins[i]]);
+  const binCells = b0 => `<td class="num">${pct(b0.share)}</td><td class="num">${fx(b0.d_med, 3)}</td><td class="num">${pct(b0.lt_m1)}</td><td class="num">${pct(b0.neg_mass)}</td>`;
+  document.getElementById("token-table").innerHTML = `
     <table>
-      <thead><tr><th>因变量 (Outcome)</th><th>自变量 (Term)</th><th class="num">ScienceWorld</th><th class="num">TextWorldExpress</th></tr></thead>
-      <tbody>
-        ${{pairs16.map(([o, t]) => `
-          <tr>
-            <td><code>${{o}}</code></td>
-            <td><code>${{t}}</code></td>
-            <td class="num">${{fmtReg(mSW[`${{o}}|${{t}}`])}}</td>
-            <td class="num">${{fmtReg(mTW[`${{o}}|${{t}}`])}}</td>
-          </tr>
-        `).join("")}}
-      </tbody>
+      <thead>
+        <tr class="group"><th></th><th colspan="4">ScienceWorld</th><th colspan="4">TextWorldExpress</th></tr>
+        <tr><th>$H^C_{t,i}$（nats）</th><th class="num">token 占比</th><th class="num">$D$ 中位数</th><th class="num">$D<-1$</th><th class="num">负 gap 份额</th><th class="num">token 占比</th><th class="num">$D$ 中位数</th><th class="num">$D<-1$</th><th class="num">负 gap 份额</th></tr>
+      </thead>
+      <tbody>${bins.map(([s, t]) => `<tr><td>${s.label}</td>${binCells(s)}${binCells(t)}</tr>`).join("")}</tbody>
+    </table>`;
+
+  typeset(document.getElementById("summary"));
+}
+
+// ---------------- Figures and tables ----------------
+const VAR_TEX = {
+  reward_raw: "$r_t$", G3_strict: "$G^{(3)}_t$", final_score_norm: "终局得分",
+  I_empty_norm: "$I_t$", H_C_mean: "$\\bar H^C_t$", H_C_p90: "$H^C_{t,\\mathrm{P90}}$", action_valid_int: "合法性 $v_t$",
+};
+
+function renderFigures() {
+  const cImg = document.getElementById("cross-img");
+  cImg.src = DATA.cross_fig;
+  cImg.onclick = () => openLightbox(DATA.cross_fig);
+
+  const tasks = [...DATA.sw.tasks, ...DATA.tw.tasks];
+  document.getElementById("task-table").innerHTML = `
+    <table>
+      <thead><tr><th>任务</th><th class="num">成功率</th><th class="num">得分</th><th class="num">合法率</th><th class="num">$I_t$ 中位数</th><th class="num">$\\rho(I_t,r_t)$</th><th class="num">$\\rho(H^C_{\\mathrm{head}},v_t)$</th></tr></thead>
+      <tbody>${tasks.map((t, i) => `
+        <tr class="${i === DATA.sw.tasks.length ? "sep" : ""}">
+          <td>${t.benchmark === "ScienceWorld" ? "SW" : "TWX"} · ${esc(t.tier)} ${esc(t.task_id)}</td>
+          <td class="num">${pct(t.succ_pct, 0)}</td><td class="num">${fx(t.score_mean, 2)}</td><td class="num">${pct(t.valid_pct, 0)}</td>
+          <td class="num">${fx(t.I_med, 3)}</td><td class="num">${fx(t.rho_I_r, 3)}</td><td class="num">${fx(t.rho_Hhead_valid, 3)}</td>
+        </tr>`).join("")}</tbody>
     </table>
-  `;
+    <p class="caption">任务内 Spearman 相关；mapreader 全胜，其 $I_t$ 中位数为 0。</p>`;
 
-  document.querySelectorAll("#chart-mode-btns .btn").forEach(btn => {{
-    btn.addEventListener("click", () => {{
-      document.querySelectorAll("#chart-mode-btns .btn").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      state.chartMode = btn.dataset.mode;
-      renderFigGallery();
-    }});
-  }});
-  renderFigGallery();
-}}
+  const cats = [["effective_setup", "有效铺垫"], ["aimless_explore", "瞎逛"], ["illegal_action", "非法动作"], ["repeat_noop", "原地重复"]];
+  const t11 = k => Object.fromEntries(DATA[k].tables.e11_zero_reward.map(r => [r.zero_reward_category, r]));
+  const s11 = t11("sw"), w11 = t11("tw");
+  const c11 = r => r ? `<td class="num">${r.n_turns}</td><td class="num">${fx(r.I_empty_mean, 2)} / ${fx(r.I_empty_median, 4)}</td><td class="num">${fx(r.H_C_mean, 3)}</td>` : `<td class="num" colspan="3">–</td>`;
+  document.getElementById("e11-table").innerHTML = `
+    <table>
+      <thead>
+        <tr class="group"><th></th><th colspan="3">ScienceWorld</th><th colspan="3">TextWorldExpress</th></tr>
+        <tr><th>类别</th><th class="num">n</th><th class="num">$I_t$ 均值 / 中位数</th><th class="num">$\\bar H^C_t$</th><th class="num">n</th><th class="num">$I_t$ 均值 / 中位数</th><th class="num">$\\bar H^C_t$</th></tr>
+      </thead>
+      <tbody>${cats.map(([k, lbl]) => `<tr><td>${lbl}</td>${c11(s11[k])}${c11(w11[k])}</tr>`).join("")}</tbody>
+    </table>`;
 
-function renderFigGallery() {{
-  const mode = state.chartMode;
-  const htmlParts = REPORT_DATA.fig_catalog.map(item => {{
-    const swSrc = REPORT_DATA.sw.figures[item.key];
-    const twSrc = REPORT_DATA.tw.figures[item.key];
-    let body = "";
-    if (mode === "both") {{
-      body = `
-        <div class="grid-2">
-          <div>
-            <div style="font-weight:700;font-size:12.5px;margin-bottom:6px;color:#0369a1;">ScienceWorld (N_ep=60, N_turn=1924)</div>
-            <img class="fig-img" src="${{swSrc}}" onclick="openLightbox(this.src)" loading="lazy" />
-            <div class="fig-caption"><b>SW 读图：</b>${{item.sw_note}}</div>
-          </div>
-          <div>
-            <div style="font-weight:700;font-size:12.5px;margin-bottom:6px;color:#047857;">TextWorldExpress (N_ep=60, N_turn=1375)</div>
-            <img class="fig-img" src="${{twSrc}}" onclick="openLightbox(this.src)" loading="lazy" />
-            <div class="fig-caption"><b>TW 读图：</b>${{item.tw_note}}</div>
-          </div>
-        </div>
-      `;
-    }} else {{
-      const isSw = mode === "sw";
-      body = `
-        <img class="fig-img" src="${{isSw ? swSrc : twSrc}}" onclick="openLightbox(this.src)" loading="lazy" />
-        <div class="fig-caption"><b>${{isSw ? 'ScienceWorld' : 'TextWorldExpress'}} 读图：</b>${{isSw ? item.sw_note : item.tw_note}}</div>
-      `;
-    }}
+  const m16 = k => Object.fromEntries(DATA[k].tables.e16_controlled_regression.map(r => [`${r.outcome}|${r.term}`, r]));
+  const s16 = m16("sw"), w16 = m16("tw");
+  const pairs = [
+    ["reward_raw", "I_empty_norm"], ["G3_strict", "I_empty_norm"], ["final_score_norm", "I_empty_norm"],
+    ["reward_raw", "H_C_mean"], ["G3_strict", "H_C_p90"], ["final_score_norm", "H_C_mean"], ["reward_raw", "action_valid_int"],
+  ];
+  const reg = r => {
+    if (!r) return "–";
+    const star = r.p_value < 0.01 ? "**" : r.p_value < 0.05 ? "*" : "";
+    return `${fx(r.coef, 4)}${star} <span class="ci">(p = ${fx(r.p_value, 3)})</span>`;
+  };
+  document.getElementById("e16-table").innerHTML = `
+    <table>
+      <thead><tr><th>因变量</th><th>自变量</th><th class="num">ScienceWorld</th><th class="num">TextWorldExpress</th></tr></thead>
+      <tbody>${pairs.map(([o, t]) => `<tr><td>${VAR_TEX[o]}</td><td>${VAR_TEX[t]}</td><td class="num">${reg(s16[o + "|" + t])}</td><td class="num">${reg(w16[o + "|" + t])}</td></tr>`).join("")}</tbody>
+    </table>`;
+
+  document.querySelectorAll("#fig-mode button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#fig-mode button").forEach(b => b.classList.toggle("active", b === btn));
+      state.figMode = btn.dataset.mode;
+      renderGallery();
+    });
+  });
+  renderGallery();
+  typeset(document.getElementById("figures"));
+}
+
+function renderGallery() {
+  const mode = state.figMode;
+  const html = DATA.fig_catalog.map((it, i) => {
+    const sw = DATA.sw.figures[it.key], tw = DATA.tw.figures[it.key];
+    const one = (src, name, note) => `
+      <div>
+        <div class="bench-name">${name}</div>
+        <img class="fig-img" src="${src}" alt="${name} ${it.key}" loading="lazy" onclick="openLightbox(this.src)" />
+        <p class="fig-note">${note}</p>
+      </div>`;
+    const body = mode === "both"
+      ? `<div class="fig-pair">${one(sw, "ScienceWorld", it.sw_note)}${one(tw, "TextWorldExpress", it.tw_note)}</div>`
+      : `<div class="fig-single">${mode === "sw" ? one(sw, "ScienceWorld", it.sw_note) : one(tw, "TextWorldExpress", it.tw_note)}</div>`;
     return `
-      <div class="fig-card">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-          <span class="badge b-slate">${{item.key}} · ${{item.e_tag}}</span>
-          <h3 style="margin:0;font-size:15.5px;">${{item.title}}</h3>
-        </div>
-        ${{body}}
-        <div class="fig-takeaway">📌 跨 Bench 结论：${{item.takeaway}}</div>
-      </div>
-    `;
-  }}).join("");
-  document.getElementById("fig-gallery").innerHTML = htmlParts;
-}}
+      <figure class="fig" id="fig-${it.key}">
+        <div class="fig-label">图 ${i + 1} · ${it.e_tag}</div>
+        <div class="fig-title">${it.title}</div>
+        ${body}
+        <p class="fig-take"><b>解读：</b>${it.takeaway}</p>
+      </figure>`;
+  }).join("");
+  const box = document.getElementById("fig-gallery");
+  box.innerHTML = html;
+  typeset(box);
+}
 
-// ================= Token Heatmap Renderer =================
-function tokenBgColor(tok, mode) {{
-  if (mode === "entropy") {{
+// ---------------- Token heatmap ----------------
+function tokenBg(tok, mode) {
+  if (mode === "entropy") {
     const h = tok[1] || 0;
     if (h < 0.05) return "transparent";
     const t = Math.min(1, h / 1.5);
-    // Warm amber -> rose gradient
-    const r = 254;
-    const g = Math.round(243 - t * 145);
-    const b = Math.round(199 - t * 135);
-    const a = 0.25 + t * 0.65;
-    return `rgba(${{r}},${{g}},${{b}},${{a.toFixed(2)}})`;
-  }} else {{
-    const d = tok[3];
-    if (d == null) return "transparent";
-    if (d >= 0) {{
-      const t = Math.min(1, d / 2.5);
-      return `rgba(16,185,129,${{(0.12 + t * 0.55).toFixed(2)}})`;
-    }} else {{
-      const t = Math.min(1, (-d) / 3.5);
-      return `rgba(239,68,68,${{(0.10 + t * 0.62).toFixed(2)}})`;
-    }}
-  }}
-}}
-
-function renderTokensHtml(toks, fallbackText, mode) {{
-  if (!toks || !toks.length) return esc(fallbackText);
-  return toks.map((tk, i) => {{
-    const bg = tokenBgColor(tk, mode);
-    const ds = tk[3] == null ? "N/A" : tk[3].toFixed(3);
-    return `<span class="tok" style="background:${{bg}};" data-t="${{esc(tk[0])}}" data-h="${{tk[1].toFixed(3)}}" data-lp="${{tk[2].toFixed(3)}}" data-ds="${{ds}}">${{esc(tk[0])}}</span>`;
-  }}).join("");
-}}
-
+    return `rgba(196, 120, 20, ${(0.12 + t * 0.5).toFixed(2)})`;
+  }
+  const d = tok[3];
+  if (d == null || Math.abs(d) < 0.05) return "transparent";
+  if (d > 0) return `rgba(30, 107, 71, ${(0.12 + Math.min(1, d / 2.5) * 0.45).toFixed(2)})`;
+  return `rgba(163, 38, 44, ${(0.10 + Math.min(1, -d / 3.5) * 0.5).toFixed(2)})`;
+}
+function renderTokens(toks, fallback, mode) {
+  if (!toks || !toks.length) return esc(fallback);
+  return toks.map(tk => {
+    const ds = tk[3] == null ? "–" : tk[3].toFixed(3);
+    return `<span class="tok" style="background:${tokenBg(tk, mode)}" data-t="${esc(tk[0])}" data-h="${tk[1].toFixed(3)}" data-lp="${tk[2].toFixed(3)}" data-ds="${ds}">${esc(tk[0])}</span>`;
+  }).join("");
+}
 const tipEl = document.getElementById("tok-tip");
-document.addEventListener("mousemove", e => {{
+document.addEventListener("mousemove", e => {
   const el = e.target.closest(".tok");
-  if (!el) {{ tipEl.style.display = "none"; return; }}
+  if (!el) { tipEl.style.display = "none"; return; }
   tipEl.innerHTML =
-    `Token: <b>${{esc(JSON.stringify(el.dataset.t))}}</b><br/>` +
-    `H_C (精确熵): <b>${{el.dataset.h}}</b> nats<br/>` +
-    `log π_S(z): <b>${{el.dataset.lp}}</b><br/>` +
-    `D_self (T-S): <b>${{el.dataset.ds}}</b>`;
+    `token ${esc(JSON.stringify(el.dataset.t))}<br/>` +
+    `H = ${el.dataset.h} nats<br/>` +
+    `log π_S = ${el.dataset.lp}<br/>` +
+    `D = ${el.dataset.ds}`;
   tipEl.style.display = "block";
-  const x = Math.min(window.innerWidth - 270, e.clientX + 14);
-  const y = Math.min(window.innerHeight - 110, e.clientY + 14);
-  tipEl.style.left = x + "px";
-  tipEl.style.top = y + "px";
-}});
+  tipEl.style.left = Math.min(window.innerWidth - 300, e.clientX + 14) + "px";
+  tipEl.style.top = Math.min(window.innerHeight - 100, e.clientY + 14) + "px";
+});
+function tokenLegend(mode) {
+  if (mode === "entropy") {
+    return `<span>CoT 底色：token 熵 $H^C_{t,i}$（nats）</span>
+      <span><span class="sw" style="background:transparent"></span>&lt; 0.05</span>
+      <span><span class="sw" style="background:rgba(196,120,20,0.28)"></span>约 0.5</span>
+      <span><span class="sw" style="background:rgba(196,120,20,0.62)"></span>≥ 1.5</span>`;
+  }
+  return `<span>CoT 底色：$D_{t,i}=\\log\\pi_T-\\log\\pi_S$</span>
+    <span><span class="sw" style="background:rgba(30,107,71,0.45)"></span>$D>0$</span>
+    <span><span class="sw" style="background:rgba(163,38,44,0.25)"></span>$D<0$</span>
+    <span><span class="sw" style="background:rgba(163,38,44,0.6)"></span>$D\\ll 0$</span>`;
+}
 
-// ================= Tab 3: Trajectory Explorer =================
-function populateTaskFilter() {{
+// ---------------- Explorer ----------------
+function populateTaskFilter() {
   const b = document.getElementById("f-bench").value;
   const sel = document.getElementById("f-task");
   const cur = sel.value;
   const tasks = [...new Set(ALL_EPISODES.filter(e => b === "all" || e.bench === b).map(e => e.task))];
-  sel.innerHTML = `<option value="all">全部任务类别 (${{tasks.length}})</option>` +
-    tasks.map(t => `<option value="${{t}}">${{t}}</option>`).join("");
+  sel.innerHTML = `<option value="all">全部任务</option>` + tasks.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
   if (tasks.includes(cur)) sel.value = cur;
-}}
+}
 
-function renderEpisodeList() {{
+function renderEpisodeList() {
   const b = document.getElementById("f-bench").value;
   const t = document.getElementById("f-task").value;
   const s = document.getElementById("f-succ").value;
   const rec = document.getElementById("f-rec").value;
   const q = document.getElementById("f-search").value.trim().toLowerCase();
-
-  const filtered = ALL_EPISODES.filter(e => {{
+  const list = ALL_EPISODES.filter(e => {
     if (b !== "all" && e.bench !== b) return false;
     if (t !== "all" && e.task !== t) return false;
     if (s === "succ" && !e.succ) return false;
     if (s === "fail" && e.succ) return false;
     if (rec === "has_rec" && e.n_rec === 0) return false;
-    if (q) {{
-      const hitId = e.id.toLowerCase().includes(q);
-      const hitTurn = e.turns.some(tr => tr.act.toLowerCase().includes(q) || tr.cot.toLowerCase().includes(q));
-      if (!hitId && !hitTurn) return false;
-    }}
+    if (q) {
+      const hit = e.id.toLowerCase().includes(q) || e.turns.some(tr => tr.act.toLowerCase().includes(q) || tr.cot.toLowerCase().includes(q));
+      if (!hit) return false;
+    }
     return true;
-  }});
-
-  document.getElementById("ep-count-badge").textContent = `${{filtered.length}} / ${{ALL_EPISODES.length}}`;
-  const listEl = document.getElementById("ep-list");
-  listEl.innerHTML = filtered.map(e => `
-    <div class="ep-item ${{e.id === state.selectedEpId ? 'active' : ''}}" onclick="selectEpisode('${{e.id}}')">
-      <div class="ep-item-title">${{e.bench==='scienceworld'?'[SW]':'[TW]'}} ${{e.task}} #${{e.seed}}</div>
-      <div class="ep-item-meta">
-        <span class="badge ${{e.succ ? 'b-emerald' : 'b-rose'}}" style="padding:0 6px;font-size:11px;">${{e.succ ? '成功' : '失败'}} (${{e.score}})</span>
-        <span>${{e.n_turns}}步</span>
-        <span>非法${{e.inv}}</span>
-        ${{e.n_rec > 0 ? `<span style="color:var(--violet);font-weight:600;">自救×${{e.n_rec}}</span>` : ''}}
+  });
+  document.getElementById("ep-count").textContent = `${list.length} / ${ALL_EPISODES.length}`;
+  document.getElementById("ep-list").innerHTML = list.map(e => `
+    <div class="ep-item ${e.id === state.selectedEpId ? "active" : ""}" onclick="selectEpisode('${e.id}')">
+      <div class="t">${e.bench === "scienceworld" ? "SW" : "TWX"} · ${esc(e.task)} #${e.seed}</div>
+      <div class="m">
+        <span class="${e.succ ? "pos" : "neg"}">${e.succ ? "成功" : "失败"} ${fx(e.score, 2)}</span>
+        <span>${e.n_turns} 步</span><span>不合法 ${e.inv}</span>
+        ${e.n_rec > 0 ? `<span style="color:var(--violet)">F→T ${e.n_rec}</span>` : ""}
       </div>
-    </div>
-  `).join("") || `<div style="padding:18px;text-align:center;color:var(--muted);">无匹配轨迹</div>`;
-}}
+    </div>`).join("") || `<div style="padding:18px;text-align:center;color:var(--muted);">无匹配轨迹</div>`;
+}
 
-function selectEpisode(epId) {{
-  state.selectedEpId = epId;
+function selectEpisode(id) {
+  state.selectedEpId = id;
   state.highlightTurn = null;
   renderEpisodeList();
   renderEpisodeDetail();
-}}
+}
 
-function renderEpisodeTimelineSVG(ep) {{
+function jumpToEpisode(id, turn = null) {
+  if (!EP_MAP[id]) return;
+  state.selectedEpId = id;
+  state.highlightTurn = turn;
+  ["f-bench", "f-succ", "f-rec"].forEach(x => { document.getElementById(x).value = "all"; });
+  populateTaskFilter();
+  document.getElementById("f-task").value = "all";
+  document.getElementById("f-search").value = "";
+  renderEpisodeList();
+  renderEpisodeDetail();
+  showTab("explorer");
+  history.replaceState(null, "", "#explorer");
+  if (turn !== null) setTimeout(() => scrollToTurn(turn), 60);
+}
+
+function timelineSVG(ep) {
   const ts = ep.turns;
   if (!ts.length) return "";
-  const W = 880, H = 210, padL = 48, padR = 48, padT = 20, padB = 34;
-  const cw = W - padL - padR, ch = H - padT - padB;
-  const maxI = Math.max(2.0, ...ts.map(x => Math.max(0, x.ie ?? 0)));
+  const W = 880, H = 210, L = 48, R = 48, T = 22, B = 34;
+  const cw = W - L - R, ch = H - T - B;
+  const maxI = Math.max(2, ...ts.map(x => Math.max(0, x.ie ?? 0)));
   const maxH = Math.max(0.4, ...ts.map(x => x.hc ?? 0));
-  const xPos = (i) => padL + (ts.length === 1 ? cw / 2 : (i / (ts.length - 1)) * cw);
-  const yI = (v) => padT + ch - (Math.max(0, v ?? 0) / maxI) * ch;
-  const yH = (v) => padT + ch - ((v ?? 0) / maxH) * ch;
-
-  const pathI = ts.map((tr, i) => `${{i===0?'M':'L'}}${{xPos(i).toFixed(1)}},${{yI(tr.ie).toFixed(1)}}`).join(" ");
-  const pathH = ts.map((tr, i) => `${{i===0?'M':'L'}}${{xPos(i).toFixed(1)}},${{yH(tr.hc).toFixed(1)}}`).join(" ");
-
-  let markers = "";
-  ts.forEach((tr, i) => {{
-    const x = xPos(i), yi = yI(tr.ie), yh = yH(tr.hc);
-    const isRec = (tr.pv === false && tr.valid === true);
-    const isRew = tr.r > 0;
-    const isInv = !tr.valid;
-    if (isRec) {{
-      markers += `<rect x="${{x-6}}" y="${{padT}}" width="12" height="${{ch}}" fill="rgba(124,58,237,0.13)"/>`;
-    }}
-    const fill = isRew ? "#059669" : (isRec ? "#7c3aed" : (isInv ? "#e11d48" : "#2563eb"));
-    const rad = (isRew || isRec) ? 5.2 : 3.6;
-    markers += `<circle cx="${{x.toFixed(1)}}" cy="${{yi.toFixed(1)}}" r="${{rad}}" fill="${{fill}}" stroke="#fff" stroke-width="1.2" style="cursor:pointer" onclick="scrollToTurn(${{tr.t}})"><title>Turn ${{tr.t}}: I_empty=${{tr.ie}}, H_C=${{tr.hc}}, r=${{tr.r}}, valid=${{tr.valid}}</title></circle>`;
-    markers += `<circle cx="${{x.toFixed(1)}}" cy="${{yh.toFixed(1)}}" r="2.6" fill="#d97706" style="cursor:pointer" onclick="scrollToTurn(${{tr.t}})"><title>Turn ${{tr.t}}: H_C_mean=${{tr.hc}} nats</title></circle>`;
-    if (i % Math.max(1, Math.ceil(ts.length / 18)) === 0 || i === ts.length - 1) {{
-      markers += `<text x="${{x.toFixed(1)}}" y="${{H-10}}" text-anchor="middle" font-size="10" fill="#64748b">T${{tr.t}}</text>`;
-    }}
-  }});
-
+  const xp = i => L + (ts.length === 1 ? cw / 2 : (i / (ts.length - 1)) * cw);
+  const yI = v => T + ch - (Math.max(0, v ?? 0) / maxI) * ch;
+  const yH = v => T + ch - ((v ?? 0) / maxH) * ch;
+  const pI = ts.map((tr, i) => `${i ? "L" : "M"}${xp(i).toFixed(1)},${yI(tr.ie).toFixed(1)}`).join(" ");
+  const pH = ts.map((tr, i) => `${i ? "L" : "M"}${xp(i).toFixed(1)},${yH(tr.hc).toFixed(1)}`).join(" ");
+  let marks = "";
+  const every = Math.max(1, Math.ceil(ts.length / 18));
+  ts.forEach((tr, i) => {
+    const x = xp(i);
+    const isRec = tr.pv === false && tr.valid;
+    const fill = tr.r > 0 ? "#1e6b47" : isRec ? "#5b3f8c" : !tr.valid ? "#a3262c" : "#1f4e79";
+    if (isRec) marks += `<rect x="${x - 6}" y="${T}" width="12" height="${ch}" fill="rgba(91,63,140,0.10)"/>`;
+    marks += `<circle cx="${x.toFixed(1)}" cy="${yI(tr.ie).toFixed(1)}" r="${tr.r > 0 || isRec ? 5 : 3.5}" fill="${fill}" stroke="#fff" stroke-width="1.2" style="cursor:pointer" onclick="scrollToTurn(${tr.t})"><title>第 ${tr.t} 步：I=${tr.ie}，H=${tr.hc}，r=${tr.r}，合法=${tr.valid}</title></circle>`;
+    marks += `<circle cx="${x.toFixed(1)}" cy="${yH(tr.hc).toFixed(1)}" r="2.4" fill="#b26b00" style="cursor:pointer" onclick="scrollToTurn(${tr.t})"><title>第 ${tr.t} 步：H=${tr.hc} nats</title></circle>`;
+    if (i % every === 0 || i === ts.length - 1) marks += `<text x="${x.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="10" fill="#8d897f">${tr.t}</text>`;
+  });
   return `
-    <svg viewBox="0 0 ${{W}} ${{H}}" style="width:100%;height:auto;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
-      <line x1="${{padL}}" y1="${{padT+ch}}" x2="${{W-padR}}" y2="${{padT+ch}}" stroke="#cbd5e1"/>
-      <line x1="${{padL}}" y1="${{padT}}" x2="${{padL}}" y2="${{padT+ch}}" stroke="#93c5fd"/>
-      <line x1="${{W-padR}}" y1="${{padT}}" x2="${{W-padR}}" y2="${{padT+ch}}" stroke="#fcd34d"/>
-      <text x="${{padL-6}}" y="${{padT+8}}" text-anchor="end" font-size="10" fill="#2563eb">${{maxI.toFixed(1)}}</text>
-      <text x="${{padL-6}}" y="${{padT+ch}}" text-anchor="end" font-size="10" fill="#2563eb">0</text>
-      <text x="${{padL}}" y="12" font-size="10.5" font-weight="700" fill="#2563eb">← 左轴：I_empty (蓝线)</text>
-      <text x="${{W-padR+6}}" y="${{padT+8}}" font-size="10" fill="#d97706">${{maxH.toFixed(2)}}</text>
-      <text x="${{W-padR+6}}" y="${{padT+ch}}" font-size="10" fill="#d97706">0</text>
-      <text x="${{W-padR}}" y="12" text-anchor="end" font-size="10.5" font-weight="700" fill="#d97706">右轴：CoT 熵 H_C (橙虚线) →</text>
-      <path d="${{pathI}}" fill="none" stroke="#2563eb" stroke-width="2"/>
-      <path d="${{pathH}}" fill="none" stroke="#d97706" stroke-width="1.8" stroke-dasharray="4 3"/>
-      ${{markers}}
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;font-family:var(--sans);">
+      <line x1="${L}" y1="${T + ch}" x2="${W - R}" y2="${T + ch}" stroke="#cfcbc0"/>
+      <line x1="${L}" y1="${T}" x2="${L}" y2="${T + ch}" stroke="#cfcbc0"/>
+      <line x1="${W - R}" y1="${T}" x2="${W - R}" y2="${T + ch}" stroke="#cfcbc0"/>
+      <text x="${L - 6}" y="${T + 8}" text-anchor="end" font-size="10" fill="#1f4e79">${maxI.toFixed(1)}</text>
+      <text x="${L - 6}" y="${T + ch}" text-anchor="end" font-size="10" fill="#1f4e79">0</text>
+      <text x="${L}" y="13" font-size="11" fill="#1f4e79">左轴：Iₜ（实线）</text>
+      <text x="${W - R + 6}" y="${T + 8}" font-size="10" fill="#b26b00">${maxH.toFixed(2)}</text>
+      <text x="${W - R + 6}" y="${T + ch}" font-size="10" fill="#b26b00">0</text>
+      <text x="${W - R}" y="13" text-anchor="end" font-size="11" fill="#b26b00">右轴：CoT 熵均值（虚线）</text>
+      <path d="${pI}" fill="none" stroke="#1f4e79" stroke-width="1.8"/>
+      <path d="${pH}" fill="none" stroke="#b26b00" stroke-width="1.5" stroke-dasharray="4 3"/>
+      ${marks}
     </svg>
-    <div class="legend-bar" style="margin-top:6px;">
-      <span>图上圆点含义：</span>
-      <span><span class="swatch" style="background:#059669;border-radius:50%;"></span> 拿分步 (r&gt;0)</span>
-      <span><span class="swatch" style="background:#7c3aed;border-radius:50%;"></span> 报错后自救 (F→T，紫底柱)</span>
-      <span><span class="swatch" style="background:#e11d48;border-radius:50%;"></span> 非法动作</span>
-      <span><span class="swatch" style="background:#2563eb;border-radius:50%;"></span> 正常 0 分步</span>
-    </div>
-  `;
-}}
+    <div class="legend" style="margin-top:6px;">
+      <span><span class="sw dot" style="background:#1e6b47"></span>获得奖励</span>
+      <span><span class="sw dot" style="background:#5b3f8c"></span>F→T（底纹）</span>
+      <span><span class="sw dot" style="background:#a3262c"></span>不合法</span>
+      <span><span class="sw dot" style="background:#1f4e79"></span>其他</span>
+      <span>横轴为步序号</span>
+    </div>`;
+}
 
-function scrollToTurn(t) {{
+function scrollToTurn(t) {
   state.highlightTurn = t;
-  document.querySelectorAll(".turn-card").forEach(el => el.classList.remove("highlight-turn"));
-  const el = document.getElementById(`turn-card-${{t}}`);
-  if (el) {{
-    el.classList.add("highlight-turn");
-    el.scrollIntoView({{ behavior: "smooth", block: "center" }});
-  }}
-}}
+  document.querySelectorAll("#ep-turns .turn").forEach(el => el.classList.remove("hl"));
+  const el = document.getElementById(`turn-${t}`);
+  if (el) {
+    el.classList.add("hl");
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
 
-function renderTurnCard(tr, mode, idPrefix = "turn-card") {{
-  const isRec = (tr.pv === false && tr.valid === true);
-  const isRew = tr.r > 0;
-  const isInv = !tr.valid;
-  const cls = [
-    "turn-card",
-    isRec ? "recovery-turn" : (isRew ? "reward-turn" : (isInv ? "invalid-turn" : "")),
-    (idPrefix === "turn-card" && state.highlightTurn === tr.t) ? "highlight-turn" : "",
-  ].join(" ");
-
-  const badges = [];
-  if (isRew) badges.push(`<span class="badge b-emerald">🎯 r = +${{tr.r}}</span>`);
-  else if (tr.r < 0) badges.push(`<span class="badge b-rose">r = ${{tr.r}}</span>`);
-  else badges.push(`<span class="badge b-slate">r = 0 (${{tr.cat}})</span>`);
-  if (isRec) badges.push(`<span class="badge b-violet">💡 报错自救 F→T</span>`);
-  else if (tr.pv === false && !tr.valid) badges.push(`<span class="badge b-rose">连续报错 F→F</span>`);
-  badges.push(tr.valid ? `<span class="badge b-emerald">合法动作</span>` : `<span class="badge b-rose">非法动作</span>`);
-
+function turnCard(tr, mode, prefix = "turn") {
+  const isRec = tr.pv === false && tr.valid;
+  const kind = isRec ? "k-rec" : tr.r > 0 ? "k-rew" : !tr.valid ? "k-inv" : "";
+  const tags = [];
+  if (tr.r > 0) tags.push(`<span class="tag pos">r = +${tr.r}</span>`);
+  else if (tr.r < 0) tags.push(`<span class="tag neg">r = ${tr.r}</span>`);
+  else tags.push(`<span class="tag">r = 0 · ${CAT_ZH[tr.cat] || esc(tr.cat)}</span>`);
+  if (isRec) tags.push(`<span class="tag vio">F→T</span>`);
+  else if (tr.pv === false && !tr.valid) tags.push(`<span class="tag neg">F→F${tr.lp ? " · 打转" : ""}</span>`);
+  tags.push(tr.valid ? `<span class="tag">合法</span>` : `<span class="tag neg">不合法</span>`);
+  const hl = prefix === "turn" && state.highlightTurn === tr.t ? " hl" : "";
+  const dnf = tr.dnf != null ? `（负 token ${Math.round(tr.dnf * 100)}%）` : "";
   return `
-    <div id="${{idPrefix}}-${{tr.t}}" class="${{cls}}">
+    <div id="${prefix}-${tr.t}" class="turn ${kind}${hl}">
       <div class="turn-head">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <strong style="font-size:14.5px;">Turn ${{tr.t}}</strong>
-          ${{badges.join("")}}
-        </div>
-        <span style="font-size:12px;color:var(--muted);">累计归一化得分：<b>${{tr.sc}}</b> · 未来3步 G3_strict：<b>${{tr.g3}}</b></span>
+        <div class="tags"><span class="tt">第 ${tr.t} 步</span>${tags.join("")}</div>
+        <span class="right">累计得分 ${tr.sc} · $G^{(3)}_t=${tr.g3}$</span>
       </div>
-
-      <details class="obs-box" ${{tr.t === 0 || isRec || isInv ? '' : ''}}>
-        <summary>Observation（点击展开/收起环境画面）</summary>
-        <div style="margin-top:6px;">${{esc(tr.obs)}}</div>
-      </details>
-
-      <div class="cot-box">
-        <span style="font-size:11.5px;font-weight:700;color:var(--muted);margin-right:6px;">Thought (CoT):</span>
-        ${{renderTokensHtml(tr.toks, tr.cot, mode)}}
+      <details class="obs"><summary>观察</summary><pre>${esc(tr.obs)}</pre></details>
+      <div class="cot-box"><span class="lbl-s">Thought</span>${renderTokens(tr.toks, tr.cot, mode)}</div>
+      <div class="act-row">
+        <div><span class="lbl-s">Action</span><span class="act-cmd">${esc(tr.act)}</span></div>
+        <span class="note">$\\log\\pi(a_t\\mid h_t,z_t)=${fx(tr.lpc, 3)}$，$\\log\\pi(a_t\\mid h_t,\\varnothing)=${fx(tr.lpe, 3)}$</span>
       </div>
-
-      <div class="action-bar">
-        <div>
-          <span style="font-size:12px;color:var(--muted);margin-right:6px;">Action:</span>
-          <span class="action-cmd">${{esc(tr.act)}}</span>
-        </div>
-        <span style="font-size:12px;color:var(--muted);">
-          <code>log π(a|h,z)=${{tr.lpc}}</code> vs <code>log π(a|h)=${{tr.lpe}}</code>
-        </span>
+      <div class="metrics">
+        <span>$I_t$ <b>${fx(tr.ie, 3)}</b></span>
+        <span>$I^{\\mathrm{neu}}_t$ <b>${fx(tr.in, 3)}</b></span>
+        <span>$\\bar H^C_t$ <b>${fx(tr.hc, 3)}</b></span>
+        <span>head / tail <b>${fx(tr.hh, 3)} / ${fx(tr.ht, 3)}</b></span>
+        <span>$\\bar H^A_t$ <b>${fx(tr.ha, 3)}</b></span>
+        <span>$\\bar D^{\\mathrm{self}}_t$ <b>${fx(tr.ds, 3)}</b>${dnf}</span>
       </div>
+    </div>`;
+}
 
-      <div class="metric-pills">
-        <span class="mpill"><b>I_empty</b>: ${{tr.ie}}</span>
-        <span class="mpill"><b>I_neutral</b>: ${{tr.in}}</span>
-        <span class="mpill"><b>H_C_mean</b>: ${{tr.hc}}</span>
-        <span class="mpill"><b>H_head/tail</b>: ${{tr.hh}} / ${{tr.ht}}</span>
-        <span class="mpill"><b>H_A</b>: ${{tr.ha}}</span>
-        <span class="mpill"><b>D_self</b>: ${{tr.ds}} (负词${{tr.dnf != null ? Math.round(tr.dnf*100)+'%' : '-'}})</span>
-      </div>
-    </div>
-  `;
-}}
-
-function renderTokenLegend(mode) {{
-  if (mode === "entropy") {{
-    return `<span>CoT 词底色 = <b>精确熵 H_C (nats)</b>（悬停看精确数值）：</span>
-      <span><span class="swatch" style="background:transparent;"></span> &lt;0.05 (很自信)</span>
-      <span><span class="swatch" style="background:rgba(254,200,150,0.45);"></span> ~0.5 (轻度犹豫)</span>
-      <span><span class="swatch" style="background:rgba(254,110,75,0.85);"></span> ≥1.5 (高熵分支词)</span>`;
-  }} else {{
-    return `<span>CoT 词底色 = <b>Self-Teacher Gap D_self = log π_T - log π_S</b>：</span>
-      <span><span class="swatch" style="background:rgba(16,185,129,0.55);"></span> D &gt; 0 (Teacher 更认可)</span>
-      <span><span class="swatch" style="background:rgba(239,68,68,0.28);"></span> D &lt; 0 (轻度分歧)</span>
-      <span><span class="swatch" style="background:rgba(239,68,68,0.70);"></span> D ≪ 0 (删历史 CoT 后严重陌生)</span>`;
-  }}
-}}
-
-function renderEpisodeDetail() {{
+function renderEpisodeDetail() {
   const ep = EP_MAP[state.selectedEpId];
   if (!ep) return;
-  document.getElementById("ep-header-card").innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+  document.getElementById("ep-header").innerHTML = `
+    <div class="ep-head">
       <div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <span class="badge ${{ep.bench==='scienceworld'?'b-sky':'b-emerald'}}">${{ep.bench_label}}</span>
-          <span class="badge b-slate">${{ep.tier}}</span>
-          <span class="badge ${{ep.succ ? 'b-emerald' : 'b-rose'}}">${{ep.succ ? '✅ 通关成功' : '❌ 未通关 ('+ep.term+')'}}</span>
-          ${{ep.n_rec > 0 ? `<span class="badge b-violet">💡 含 ${{ep.n_rec}} 次报错自救</span>` : ''}}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <span class="tag acc">${ep.bench_label}</span><span class="tag">${esc(ep.tier)}</span>
+          <span class="tag ${ep.succ ? "pos" : "neg"}">${ep.succ ? "成功" : "失败（" + esc(ep.term) + "）"}</span>
+          ${ep.n_rec > 0 ? `<span class="tag vio">F→T ${ep.n_rec} 次</span>` : ""}
         </div>
-        <h2 style="margin:8px 0 0;font-size:18px;"><code>${{ep.id}}</code></h2>
+        <h3>${esc(ep.id)}</h3>
       </div>
-      <div style="display:flex;gap:14px;font-size:13px;color:var(--muted);">
-        <div>终局分：<b style="color:var(--text);font-size:16px;">${{ep.score}}</b></div>
-        <div>总步数：<b style="color:var(--text);font-size:16px;">${{ep.n_turns}}</b></div>
-        <div>非法步：<b style="color:var(--rose);font-size:16px;">${{ep.inv}}</b></div>
+      <div class="ep-stats">
+        <div>终局得分 <b>${fx(ep.score, 3)}</b></div>
+        <div>步数 <b>${ep.n_turns}</b></div>
+        <div>不合法 <b>${ep.inv}</b></div>
       </div>
-    </div>
-  `;
-  document.getElementById("ep-timeline-svg").innerHTML = renderEpisodeTimelineSVG(ep);
-  document.getElementById("tok-legend").innerHTML = renderTokenLegend(state.tokColorMode);
-  document.getElementById("ep-turns-list").innerHTML = ep.turns.map(tr => renderTurnCard(tr, state.tokColorMode)).join("");
-}}
+    </div>`;
+  document.getElementById("ep-timeline").innerHTML = timelineSVG(ep);
+  const legend = document.getElementById("tok-legend");
+  legend.innerHTML = tokenLegend(state.tokMode);
+  const box = document.getElementById("ep-turns");
+  box.innerHTML = ep.turns.map(tr => turnCard(tr, state.tokMode)).join("");
+  typeset(legend);
+  typeset(box);
+}
 
-// ================= Tab 4: Curated Cases =================
-function renderCasesTab() {{
-  const box = document.getElementById("cases-container");
-  box.innerHTML = REPORT_DATA.curated_cases.map((c, idx) => {{
+// ---------------- Cases ----------------
+function renderCases() {
+  const box = document.getElementById("cases-box");
+  box.innerHTML = DATA.curated_cases.map((c, idx) => {
     const ep = EP_MAP[c.episode_id];
     if (!ep) return "";
-    const mode = c.category === "sign_conflict" ? "dself" : "entropy";
-    const turnsHtml = c.turns.map(tNum => {{
-      const tr = ep.turns.find(x => x.t === tNum);
-      return tr ? renderTurnCard(tr, mode, `case-${{idx}}`) : "";
-    }}).join("");
+    const turns = c.turns.map(t => ep.turns.find(x => x.t === t)).filter(Boolean).map(tr => turnCard(tr, c.mode, `case${idx}`)).join("");
     return `
-      <div class="card" style="margin-bottom:18px;border-top:3px solid var(--${{c.color === 'orange' ? 'amber' : c.color}});">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+      <div class="case">
+        <div class="case-top">
           <div>
-            <span class="badge b-${{c.color}}">${{c.badge}}</span>
-            <h3 style="margin:6px 0 0;font-size:16px;">${{c.title}}</h3>
+            <span class="fig-label">案例 ${idx + 1} · ${c.tag}</span>
+            <h3>${c.title}</h3>
           </div>
-          <button class="btn primary" onclick="jumpToEpisode('${{c.episode_id}}', ${{c.turns[0]}})">在轨迹浏览器中查看完整该局 →</button>
+          <button class="btn" onclick="jumpToEpisode('${c.episode_id}', ${c.turns[0]})">在轨迹浏览器中打开</button>
         </div>
-        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13.5px;color:#334155;">
-          <b>🔍 深度解读：</b>${{c.analysis}}
-        </div>
-        <div class="legend-bar" style="margin-bottom:8px;">${{renderTokenLegend(mode)}}</div>
-        ${{turnsHtml}}
-      </div>
-    `;
-  }}).join("");
-}}
+        <p class="analysis">${c.analysis}</p>
+        <div class="legend" style="margin-bottom:8px;">${tokenLegend(c.mode)}</div>
+        ${turns}
+      </div>`;
+  }).join("");
+  typeset(box);
+}
 
-// ================= Init Listeners =================
-["f-bench", "f-task", "f-succ", "f-rec"].forEach(id => {{
-  document.getElementById(id).addEventListener("change", () => {{
+// ---------------- Init ----------------
+["f-bench", "f-task", "f-succ", "f-rec"].forEach(id => {
+  document.getElementById(id).addEventListener("change", () => {
     if (id === "f-bench") populateTaskFilter();
     renderEpisodeList();
-  }});
-}});
+  });
+});
 document.getElementById("f-search").addEventListener("input", renderEpisodeList);
-
-document.querySelectorAll("#tok-color-mode .btn").forEach(btn => {{
-  btn.addEventListener("click", () => {{
-    document.querySelectorAll("#tok-color-mode .btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    state.tokColorMode = btn.dataset.cmode;
+document.querySelectorAll("#tok-mode button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#tok-mode button").forEach(b => b.classList.toggle("active", b === btn));
+    state.tokMode = btn.dataset.cmode;
     renderEpisodeDetail();
-  }});
-}});
+  });
+});
 
-// Boot
-renderOverview();
-renderChartsTab();
+renderSummary();
+renderFigures();
 populateTaskFilter();
 renderEpisodeList();
 renderEpisodeDetail();
-renderCasesTab();
+renderCases();
+typeset(document.getElementById("setup"));
+typeset(document.getElementById("cases"));
+const initial = location.hash.slice(1);
+if (TAB_IDS.includes(initial)) showTab(initial);
 </script>
 </body>
 </html>
 """
-    OUT_HTML.write_text(html_doc, encoding="utf-8")
-    size_mb = OUT_HTML.stat().st_size / (1024 * 1024)
-    print(f"[HTML Builder Complete] Wrote self-contained interactive report: {OUT_HTML} ({size_mb:.2f} MB)")
 
 
 if __name__ == "__main__":

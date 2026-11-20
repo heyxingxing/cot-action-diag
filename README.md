@@ -8,7 +8,7 @@
 
 **建议阅读顺序**
 1. [`PROGRESS.md`](PROGRESS.md)：当前进度、配置、全量结果、按图结论、对 w = f(C, H) 的初步回答、已知局限和待办。**最新结论以这里为准。**
-2. `results/experiment_report.html`：交互式总报告（单文件，下载后用浏览器打开）。部分解读有过度推断，核对结果见 `PROGRESS.md` §8。
+2. **在线报告**：https://heyxingxing.github.io/cot-action-diag/ （即仓库根目录的 `index.html`，由 `scripts/06_build_html_report.py` 生成，含摘要、图表、轨迹浏览器和案例；本地打开需保持仓库目录结构）。
 3. `results/{scienceworld,textworld_express}_full/figures/`、`tables/`：两个 Bench 各 10 张图和统计表；`results/cross_benchmark/`：跨 Bench 对照。
 4. [`docs/experiment_plan_qwen3_8b.md`](docs/experiment_plan_qwen3_8b.md)：实验手册（E01–E18 定义、指标公式、零样本规则）；`docs/cot_action_overview_same_tasks_v2.pdf`：诊断任务设计总览。
 
@@ -21,7 +21,8 @@
 | `configs/` | `protocol.yaml`（通用）、`protocol_a800.yaml`（服务器本地模型路径） |
 | `data/*_full/` | 全量数据：`episodes.jsonl`（每局）、`turns.jsonl`（每步原始文本和 token ids）、`turn_metrics.jsonl`（每步指标）、`token_stats.parquet`（逐 token logp / 熵 / D） |
 | `data/*_smoke*/` | E01 试水：`_smoke` 为 v2（接口说明书 prompt），`_smoke_v1` 为旧 prompt |
-| `results/` | 图、表、报告 |
+| `results/` | 图和表 |
+| `index.html`、`assets/katex/` | 交互式报告（GitHub Pages 从仓库根目录发布）及其使用的 KaTeX 0.16.11 |
 | `logs/` | 全量运行和 E01 v2 的终端日志 |
 | `tests/` | 本地无 GPU 端到端自测 |
 
