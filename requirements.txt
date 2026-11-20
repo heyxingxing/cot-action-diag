@@ -1,0 +1,20 @@
+# 核心推理与打分框架（transformers 必须 >= 4.51.0 才原生支持 Qwen3 与 enable_thinking）
+torch>=2.4.0
+transformers>=4.51.0
+accelerate>=1.0.0
+vllm>=0.8.5
+
+# 数据存储与统计绘图
+pyyaml>=6.0
+tqdm>=4.66.0
+numpy>=1.26.0
+pandas>=2.2.0
+pyarrow>=15.0.0
+scipy>=1.12.0
+scikit-learn>=1.4.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# 两个文本交互 Benchmark（底层均依赖系统已安装 OpenJDK 11/17）
+scienceworld
+textworld-express

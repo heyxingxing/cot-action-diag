@@ -1,0 +1,450 @@
+﻿episode_id,turn_id,benchmark,task_id,observation,cot,action,next_observation,cot_explicit_intent,action_contradicts_cot,cot_too_vague,notes
+scienceworld__find-living-thing__s13,5,scienceworld,find-living-thing,You move to the hallway.,"I need to find a living thing. The hallway doesn't seem to have any, so I should check other rooms. The outside is closed, so I need to open the door first.",open door to outside,No known action matches that input.,,,,
+scienceworld__find-living-thing__s9,24,scienceworld,find-living-thing,"This room is called the bathroom. In it, you see: 
+	the agent
+	a substance called air
+	a bathtub, which is turned off. In the bathtub is: nothing.
+	a glass cup (containing nothing)
+	a orange box (containing nothing)
+	a painting
+	a sink, which is turned off. In the sink is: nothing.
+	a toilet. In the toilet is: A drain, which is closed, a substance called water.
+You also see:
+	A door to the kitchen (that is open)",I have located the orange box in the bathroom. Now I need to move the pea plant into it.,move pea plant in orange box,You move the pea plant to the orange box.,,,,
+scienceworld__test-conductivity__s12,5,scienceworld,test-conductivity,The door is now open.,The workshop is now accessible. I should enter the workshop to locate the aluminum foil and focus on it.,go to workshop,You move to the workshop.,,,,
+scienceworld__test-conductivity__s4,18,scienceworld,test-conductivity,"Connections must specify specific points of contact on unpolarized electrical components (e.g. terminal 1, terminal 2)",I need to connect the yellow wire to the battery's terminals properly. I should specify the correct terminal for the connection.,connect yellow wire to terminal 1 of battery,No known action matches that input.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s0,4,scienceworld,chemistry-mix-paint-secondary-color,The ultra low temperature freezer is now open.,"The ultra low temperature freezer is open, so I should look inside to find any chemical substances that could be used to create green paint.",look in ultra low temperature freezer,"Inside the ultra low temperature freezer is: 
+	nothing",,,,
+scienceworld__find-living-thing__s14,9,scienceworld,find-living-thing,No known action matches that input.,"I need to find a living thing. The previous action was invalid, so I should try opening a different closed door from the hallway. The greenhouse, kitchen, or workshop might contain a living thing.",open door to greenhouse,No known action matches that input.,,,,
+scienceworld__find-living-thing__s9,13,scienceworld,find-living-thing,"This room is called the hallway. In it, you see: 
+	the agent
+	a substance called air
+	a picture
+You also see:
+	A door to the art studio (that is closed)
+	A door to the bedroom (that is open)
+	A door to the greenhouse (that is open)
+	A door to the kitchen (that is closed)
+	A door to the living room (that is closed)
+	A door to the workshop (that is closed)","I need to find the bathroom. It is not listed in the hallway, so I should check other rooms or revisit previously visited areas.",go to bedroom,You move to the bedroom.,,,,
+scienceworld__test-conductivity__s7,18,scienceworld,test-conductivity,No known action matches that input.,"I need to correctly connect the green wire to the battery's anode using the proper command format. I should try using the ""connect"" command with the correct object names and structure.",connect green wire to anode of battery,No known action matches that input.,,,,
+scienceworld__find-living-thing__s7,13,scienceworld,find-living-thing,"This room is called the kitchen. In it, you see: 
+	the agent
+	a substance called air
+	a chair. On the chair is: nothing.
+	a counter. On the counter is: a bowl (containing a red apple, a banana, an orange, a potato), a drawer.
+	a cupboard. The cupboard door is closed. 
+	a freezer. The freezer door is closed. 
+	a fridge. The fridge door is closed. 
+	a glass jar (containing a substance called sodium chloride)
+	a lighter
+	a oven, which is turned off. The oven door is closed. 
+	a painting
+	a sink, which is turned off. In the sink is: nothing.
+	a substance called soap
+	a stopwatch, which is deactivated. 
+	a stove, which is turned off. On the stove is: nothing.
+	a table. On the table is: a glass cup (containing nothing).
+	a thermometer, currently reading a temperature of 10 degrees celsius
+You also see:
+	A door to the bathroom (that is closed)
+	A door to the hallway (that is open)
+	A door to the outside (that is closed)","I need to find the green box in the bathroom. The bathroom door is closed, so I should open it first.",open door to bathroom,The door is now open.,,,,
+scienceworld__find-living-thing__s9,9,scienceworld,find-living-thing,You focus on the pea plant.,"I need to move the pea plant to the orange box in the bathroom. First, I should pick it up.",pick up pea plant in flower pot 2,You move the pea plant to the inventory.,,,,
+scienceworld__test-conductivity__s2,28,scienceworld,test-conductivity,"This outside location is called the outside. Here you see: 
+	the agent
+	a substance called air
+	an axe
+	a fire pit (containing nothing)
+	a fountain (containing a substance called water)
+	the ground
+	a shovel
+	a substance called wood
+You also see:
+	A door to the foundry (that is closed)
+	A door to the greenhouse (that is closed)
+	A door to the kitchen (that is open)","I am outside and need to check the foundry or greenhouse, as the aluminum foil might be located there. I will open the door to the foundry first.",open door to foundry,The door is now open.,,,,
+scienceworld__test-conductivity__s4,29,scienceworld,test-conductivity,No known action matches that input.,I need to use the correct command format to connect the blue wire to the battery. I should try connecting the blue wire to the battery's terminals using the proper syntax.,connect blue wire to terminal 1 of battery,No known action matches that input.,,,,
+scienceworld__find-living-thing__s9,21,scienceworld,find-living-thing,"This room is called the kitchen. In it, you see: 
+	the agent
+	a substance called air
+	a chair. On the chair is: nothing.
+	a counter. On the counter is: a bowl (containing a red apple, a banana, an orange, a potato), a drawer.
+	a cupboard. The cupboard door is closed. 
+	a freezer. The freezer door is closed. 
+	a fridge. The fridge door is closed. 
+	a glass jar (containing a substance called sodium chloride)
+	a lighter
+	a oven, which is turned off. The oven door is closed. 
+	a painting
+	a sink, which is turned off. In the sink is: nothing.
+	a substance called soap
+	a stopwatch, which is deactivated. 
+	a stove, which is turned off. On the stove is: nothing.
+	a table. On the table is: a glass cup (containing nothing).
+	a thermometer, currently reading a temperature of 10 degrees celsius
+You also see:
+	A door to the bathroom (that is closed)
+	A door to the hallway (that is open)
+	A door to the outside (that is closed)","I have found the door to the bathroom. It is closed, so I need to open it first.",open door to bathroom,The door is now open.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s19,31,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"I need to try a different approach. The correct command to pick up the red paint is ""pick up wood cup (containing red paint)"". I will try again.",pick up wood cup (containing red paint),No known action matches that input.,,,,
+scienceworld__find-living-thing__s12,13,scienceworld,find-living-thing,No known action matches that input.,I am repeatedly unable to navigate back to the living room. I should check if I am already in the living room or if there is an alternative way to reach it.,look around,"This room is called the greenhouse. In it, you see: 
+	the agent
+	a substance called air
+	a bee hive. The bee hive door is closed. 
+	a flower pot 1 (containing soil)
+	a flower pot 2 (containing a apple tree in the reproducing stage, soil)
+	a flower pot 3 (containing a pea plant in the reproducing stage with a tall height, soil)
+	a flower pot 6 (containing nothing)
+	a flower pot 8 (containing nothing)
+	a jug (containing nothing)
+	a shovel
+	a sink, which is turned off. In the sink is: nothing.
+You also see:
+	A door to the hallway (that is open)
+	A door to the outside (that is closed)",,,,
+scienceworld__chemistry-mix-paint-secondary-color__s5,1,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"I made a mistake in the command. The correct command should be ""open door to"" followed by the room name, not the object name. I need to open the door to the hallway instead.",open door to hallway,The door is now open.,,,,
+scienceworld__test-conductivity__s5,27,scienceworld,test-conductivity,No known action matches that input.,"I should attempt to create a complete circuit using the battery, wires, and light bulb to test the conductivity of the aluminum foil. I need to ensure the connections are made correctly.",connect battery's positive terminal to black wire's end,No known action matches that input.,,,,
+scienceworld__test-conductivity__s8,18,scienceworld,test-conductivity,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",I need to identify the correct connection points on the battery and aluminum foil to form a proper circuit for testing conductivity.,connect battery to aluminum foil,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",,,,
+scienceworld__test-conductivity__s18,5,scienceworld,test-conductivity,You move the battery to the inventory.,I need to complete the circuit by picking up the wires and switch to test the conductivity of the aluminum foil.,pick up green wire,You move the green wire to the inventory.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s8,14,scienceworld,chemistry-mix-paint-secondary-color,a painting of a boat crossing a river. The artist is listed as Bob.,The painting does not provide any useful materials or information for creating green paint. I should return to the bathroom to check if there are any other items I might have missed.,go to bathroom,You move to the bathroom.,,,,
+scienceworld__find-living-thing__s15,17,scienceworld,find-living-thing,You move to the living room.,I am now in the living room. I need to locate the orange box and place the pea plant inside it.,look around,"This room is called the living room. In it, you see: 
+	the agent
+	a substance called air
+	a chair. On the chair is: nothing.
+	a couch. On the couch is: a white pillow.
+	a finger painting
+	a orange box (containing nothing)
+	a table. On the table is: nothing.
+You also see:
+	A door to the hallway (that is open)",,,,
+scienceworld__chemistry-mix-paint-secondary-color__s8,5,scienceworld,chemistry-mix-paint-secondary-color,"The fridge isn't open, so you can't see inside.","I need to open the fridge to check its contents. Once open, I can look inside for materials that might help in creating green paint.",open fridge,The fridge is now open.,,,,
+scienceworld__find-living-thing__s4,17,scienceworld,find-living-thing,You move to the kitchen.,I am now in the kitchen. I need to locate the yellow box and move the pea plant into it.,look around,"This room is called the kitchen. In it, you see: 
+	the agent
+	a substance called air
+	a chair. On the chair is: nothing.
+	a counter. On the counter is: a bowl (containing a red apple, a banana, an orange, a potato), a drawer.
+	a cupboard. The cupboard door is closed. 
+	a freezer. The freezer door is closed. 
+	a fridge. The fridge door is closed. 
+	a glass jar (containing a substance called sodium chloride)
+	a lighter
+	a oven, which is turned off. The oven door is closed. 
+	a painting
+	a sink, which is turned off. In the sink is: nothing.
+	a substance called soap
+	a stopwatch, which is deactivated. 
+	a stove, which is turned off. On the stove is: nothing.
+	a table. On the table is: a glass cup (containing nothing).
+	a thermometer, currently reading a temperature of 10 degrees celsius
+	a yellow box (containing nothing)
+You also see:
+	A door to the bathroom (that is closed)
+	A door to the hallway (that is open)
+	A door to the outside (that is closed)",,,,
+scienceworld__find-living-thing__s11,13,scienceworld,find-living-thing,"This room is called the kitchen. In it, you see: 
+	the agent
+	a substance called air
+	a chair. On the chair is: nothing.
+	a counter. On the counter is: a bowl (containing a red apple, a banana, an orange, a potato), a drawer.
+	a cupboard. The cupboard door is closed. 
+	a freezer. The freezer door is closed. 
+	a fridge. The fridge door is closed. 
+	a glass jar (containing a substance called sodium chloride)
+	a lighter
+	a oven, which is turned off. The oven door is closed. 
+	a painting
+	a sink, which is turned off. In the sink is: nothing.
+	a substance called soap
+	a stopwatch, which is deactivated. 
+	a stove, which is turned off. On the stove is: nothing.
+	a table. On the table is: a glass cup (containing nothing).
+	a thermometer, currently reading a temperature of 10 degrees celsius
+You also see:
+	A door to the bathroom (that is open)
+	A door to the hallway (that is closed)
+	A door to the outside (that is closed)","I need to check the cupboard, freezer, or fridge in the kitchen, as they might contain a living thing. I'll start by opening the cupboard.",open cupboard,The cupboard is now open.,,,,
+scienceworld__test-conductivity__s15,13,scienceworld,test-conductivity,No known action matches that input.,I need to adjust my approach to connect the components properly. I will try using the correct command format to connect the red wire to the battery's terminal.,connect red wire to battery terminal 1,No known action matches that input.,,,,
+scienceworld__test-conductivity__s15,15,scienceworld,test-conductivity,"Connections must specify specific points of contact on unpolarized electrical components (e.g. terminal 1, terminal 2)",I need to specify the correct contact points on the aluminum foil to connect the wire. I will try connecting the wire to a specific point on the foil.,connect red wire to A aluminum foil terminal 1,"Connections must specify specific points of contact on unpolarized electrical components (e.g. terminal 1, terminal 2)",,,,
+scienceworld__find-living-thing__s16,8,scienceworld,find-living-thing,No known action matches that input.,I cannot go to the living room directly from the greenhouse. I need to return to the outside first and then find the path to the living room.,go to outside,You move to the outside.,,,,
+scienceworld__test-conductivity__s8,21,scienceworld,test-conductivity,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",I need to properly connect the battery's anode and cathode to the aluminum foil to test its conductivity. I should use wires to make the connections.,connect battery to aluminum foil,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",,,,
+scienceworld__test-conductivity__s8,32,scienceworld,test-conductivity,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",I need to correctly identify the anode and cathode of the battery and connect them to the aluminum foil using wires to test its conductivity. I should use the wires available in the workshop.,connect battery to aluminum foil,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",,,,
+scienceworld__find-living-thing__s0,13,scienceworld,find-living-thing,No known action matches that input.,"It seems there is a persistent issue with interacting with the pea plant. I should try a different approach, such as checking if the pea plant is inside a container or if there are other living things in the greenhouse that might be easier to interact with.",look around,"This room is called the greenhouse. In it, you see: 
+	the agent
+	a substance called air
+	a bee hive. The bee hive door is closed. 
+	a flower pot 2 (containing nothing)
+	a flower pot 5 (containing a pea plant in the adult stage with a tall height, soil)
+	a flower pot 6 (containing a cherry tree in the adult stage, soil)
+	a flower pot 8 (containing a apple tree in the adult stage, soil)
+	a flower pot 9 (containing nothing)
+	a jug (containing nothing)
+	a shovel
+	a sink, which is turned off. In the sink is: nothing.
+You also see:
+	A door to the hallway (that is open)
+	A door to the outside (that is closed)",,,,
+scienceworld__test-conductivity__s2,16,scienceworld,test-conductivity,Its not clear how to go to/through a freezer.,"I should open the freezer door first to check its contents. Once open, I can look inside to see if the aluminum foil is there.",open freezer,The freezer is now open.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s7,3,scienceworld,chemistry-mix-paint-secondary-color,"This room is called the art studio. In it, you see: 
+	the agent
+	a substance called air
+	a large cupboard. The large cupboard door is closed. 
+	a paint closet. The paint closet door is closed. 
+	a table. On the table is: a jug (containing nothing).
+	a wood cup (containing red paint)
+	a wood cup (containing blue paint)
+	a wood cup (containing yellow paint)
+You also see:
+	A door to the hallway (that is open)","I have found paint cups containing red, blue, and yellow paint, which are primary colors. Green can be made by mixing blue and yellow. I should mix the blue and yellow paint to create green paint.",move blue paint to yellow paint,"You can't pick up a liquid directly. Try pouring it from one container to another, or dunking empty containers into containers filled with the liquid.",,,,
+scienceworld__find-living-thing__s3,2,scienceworld,find-living-thing,"This outside location is called the outside. Here you see: 
+	the agent
+	a substance called air
+	an axe
+	a blue jay egg
+	a butterfly egg
+	a dove egg
+	a fire pit (containing nothing)
+	a fountain (containing a substance called water)
+	the ground
+	a substance called wood
+You also see:
+	A door to the foundry (that is closed)
+	A door to the greenhouse (that is closed)
+	A door to the kitchen (that is closed)","I need to find a living thing. The eggs are potential candidates, but I should check if there are any other living things in the environment.",look around,"This outside location is called the outside. Here you see: 
+	the agent
+	a substance called air
+	an axe
+	a blue jay egg
+	a butterfly egg
+	a dove egg
+	a fire pit (containing nothing)
+	a fountain (containing a substance called water)
+	the ground
+	a substance called wood
+You also see:
+	A door to the foundry (that is closed)
+	A door to the greenhouse (that is closed)
+	A door to the kitchen (that is closed)",,,,
+scienceworld__test-conductivity__s19,32,scienceworld,test-conductivity,No known action matches that input.,I need to find a different way to test the conductivity of the aluminum foil. I will try connecting it to the battery and observe if any reaction occurs.,connect aluminum foil to battery,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",,,,
+scienceworld__find-living-thing__s12,16,scienceworld,find-living-thing,You move to the living room.,"I have returned to the living room. Now, I need to move the cherry tree to the red box. I should place the cherry tree into the red box.",move cherry tree to red box,You move the cherry tree to the red box.,,,,
+scienceworld__test-conductivity__s0,12,scienceworld,test-conductivity,The door is not open.,The door to the living room is closed. I need to open it before I can check if the multimeter is inside.,open door to living room,The door is now open.,,,,
+scienceworld__test-conductivity__s8,22,scienceworld,test-conductivity,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",I need to specify the anode and cathode of the battery and connect them to the aluminum foil using wires to test its conductivity.,connect battery to aluminum foil,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",,,,
+scienceworld__chemistry-mix-paint-secondary-color__s5,8,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"I made a mistake in the command. The correct command is ""pick up"" followed by the full name of the object as it appears in the observation. I should try picking up the yellow paint again using the correct syntax.",pick up tin cup containing yellow paint,You move the tin cup to the inventory.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s0,26,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"I need to reorient myself. Since I cannot go to the workshop directly, I should return to the hallway and then proceed to the workshop.",go to hallway,You move to the hallway.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s8,2,scienceworld,chemistry-mix-paint-secondary-color,You move to the kitchen.,The kitchen has various objects that might be useful. I should look around to identify potential materials for creating green paint.,look around,"This room is called the kitchen. In it, you see: 
+	the agent
+	a substance called air
+	a chair. On the chair is: nothing.
+	a counter. On the counter is: a bowl (containing a red apple, a banana, an orange, a potato), a drawer.
+	a cupboard. The cupboard door is closed. 
+	a freezer. The freezer door is closed. 
+	a fridge. The fridge door is closed. 
+	a glass jar (containing a substance called sodium chloride)
+	a lighter
+	a oven, which is turned off. The oven door is closed. 
+	a painting
+	a sink, which is turned off. In the sink is: nothing.
+	a substance called soap
+	a stopwatch, which is deactivated. 
+	a stove, which is turned off. On the stove is: nothing.
+	a table. On the table is: a glass cup (containing nothing).
+	a thermometer, currently reading a temperature of 10 degrees celsius
+You also see:
+	A door to the bathroom (that is open)
+	A door to the hallway (that is closed)
+	A door to the outside (that is closed)",,,,
+scienceworld__chemistry-mix-paint-secondary-color__s13,11,scienceworld,chemistry-mix-paint-secondary-color,"You can't pick up a liquid directly. Try pouring it from one container to another, or dunking empty containers into containers filled with the liquid.","I need to transfer the water into a container to pick it up. The glass cup is available, so I should pour the water into the glass cup first.",pour water in glass cup,The toilet the water is in is not movable.,,,,
+scienceworld__find-living-thing__s3,1,scienceworld,find-living-thing,a blue jay egg,"The blue jay egg is an egg, which may be a living thing. I should check if it is alive or if there is another living thing nearby.",look around,"This outside location is called the outside. Here you see: 
+	the agent
+	a substance called air
+	an axe
+	a blue jay egg
+	a butterfly egg
+	a dove egg
+	a fire pit (containing nothing)
+	a fountain (containing a substance called water)
+	the ground
+	a substance called wood
+You also see:
+	A door to the foundry (that is closed)
+	A door to the greenhouse (that is closed)
+	A door to the kitchen (that is closed)",,,,
+scienceworld__test-conductivity__s13,1,scienceworld,test-conductivity,The door is not open.,The door to the kitchen is closed. I need to open it before entering.,open door to kitchen,The door is now open.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s6,26,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"I need to open the door to the bee hive before interacting with it. The correct command is ""open door to bee hive.""",open door to bee hive,No known action matches that input.,,,,
+scienceworld__find-living-thing__s4,14,scienceworld,find-living-thing,No known action matches that input.,"I need to try a different approach to open the door to the kitchen, as the command is not being recognized. I will check if there is another way to access the kitchen.",go to hallway,You move to the hallway.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s17,0,scienceworld,chemistry-mix-paint-secondary-color,"This outside location is called the outside. Here you see: 
+	the agent
+	a substance called air
+	an axe
+	a fire pit (containing nothing)
+	a fountain (containing nothing)
+	the ground
+	a substance called wood
+You also see:
+	A door to the foundry (that is closed)
+	A door to the greenhouse (that is closed)
+	A door to the kitchen (that is closed)",I need to find the necessary materials to create orange paint. I should start by exploring the available rooms to gather the required substances.,open door to foundry,The door is now open.,,,,
+scienceworld__find-living-thing__s12,6,scienceworld,find-living-thing,"This room is called the greenhouse. In it, you see: 
+	the agent
+	a substance called air
+	a bee hive. The bee hive door is closed. 
+	a flower pot 1 (containing a cherry tree in the adult stage, soil)
+	a flower pot 2 (containing a apple tree in the adult stage, soil)
+	a flower pot 3 (containing a pea plant in the adult stage with a tall height, soil)
+	a flower pot 6 (containing nothing)
+	a flower pot 8 (containing nothing)
+	a jug (containing nothing)
+	a shovel
+	a sink, which is turned off. In the sink is: nothing.
+You also see:
+	A door to the hallway (that is open)
+	A door to the outside (that is closed)","I need to find a living thing. The flower pots contain plants, which are living things. I should focus on one of the plants, such as the cherry tree, and move it to the red box in the living room.",focus on cherry tree in flower pot 1,You focus on the cherry tree.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s10,15,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"I need to correct my action. The correct command to pick up the blue paint is ""pick up wood cup (containing blue paint)"" exactly as it appears in the observation. I will try that now.",pick up wood cup (containing blue paint),No known action matches that input.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s14,15,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"It appears there is an issue with the command format. I should try using the ""look around"" command to get a clearer understanding of the environment and object names.",look around,"This room is called the art studio. In it, you see: 
+	the agent
+	a substance called air
+	a desk. On the desk is: a drawer, a tin cup (containing red paint), a tin cup (containing blue paint), a tin cup (containing yellow paint).
+	a large cupboard. The large cupboard door is closed. 
+	a table. On the table is: a jug (containing nothing).
+	a wood cup (containing red paint)
+	a wood cup (containing blue paint)
+	a wood cup (containing yellow paint)
+You also see:
+	A door to the hallway (that is closed)",,,,
+scienceworld__test-conductivity__s15,3,scienceworld,test-conductivity,You move the battery to the inventory.,I need to pick up additional components to test the conductivity of the aluminum foil. I will pick up a wire and a light bulb.,pick up red wire,You move the red wire to the inventory.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s13,15,scienceworld,chemistry-mix-paint-secondary-color,a finger painting of two people playing. The artist is listed as Lily.,The finger painting does not contain any pigments or substances that can be used for creating paint. I should look for other materials in the bathroom.,look around,"This room is called the bathroom. In it, you see: 
+	the agent
+	a substance called air
+	a bathtub, which is turned off. In the bathtub is: nothing.
+	a finger painting
+	a glass cup (containing a substance called water)
+	a sink, which is turned off. In the sink is: nothing.
+	a toilet. In the toilet is: A drain, which is closed.
+You also see:
+	A door to the kitchen (that is closed)",,,,
+scienceworld__chemistry-mix-paint-secondary-color__s18,23,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"I need to find the correct command syntax for mixing paints. I should try using ""mix"" with the correct object names and structure.",mix wood cup (containing yellow paint) with wood cup (containing red paint),No known action matches that input.,,,,
+scienceworld__find-living-thing__s19,34,scienceworld,find-living-thing,"Task description:
+Your task is to find a(n) living thing. First, focus on the thing. Then, move it to the green box in the bedroom.","The task has been successfully completed. The bee was found, focused on, and moved to the green box in the bedroom.",task,"Task description:
+Your task is to find a(n) living thing. First, focus on the thing. Then, move it to the green box in the bedroom.",,,,
+scienceworld__chemistry-mix-paint-secondary-color__s13,31,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"I need to correctly pick up the orange from the bowl on the counter. I should use the exact command format for picking up objects, specifying the container if necessary.",pick up orange from bowl on counter,No known action matches that input.,,,,
+scienceworld__test-conductivity__s4,6,scienceworld,test-conductivity,I'm not sure how to use the yellow wire.,I need to use the conductivity tester properly. I should first connect the yellow wire to the battery to create a circuit.,connect yellow wire to battery,"Connections must specify specific points of contact on unpolarized electrical components (e.g. terminal 1, terminal 2)",,,,
+scienceworld__chemistry-mix-paint-secondary-color__s6,19,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"I need to open the door to the bee hive before interacting with it. The correct command is ""open door to bee hive.""",open door to bee hive,No known action matches that input.,,,,
+scienceworld__test-conductivity__s12,10,scienceworld,test-conductivity,No known action matches that input.,I need to correctly connect the aluminum foil to the battery's terminals to test conductivity. I should first identify the correct terminals on the battery.,look at battery,a battery. its anode is connected to: nothing. its cathode is connected to: nothing.,,,,
+scienceworld__find-living-thing__s7,11,scienceworld,find-living-thing,The door is now open.,"The kitchen door is open, so I can now enter and look for the bathroom. I will go to the kitchen next.",go to kitchen,You move to the kitchen.,,,,
+scienceworld__test-conductivity__s16,13,scienceworld,test-conductivity,"Task description:
+Your task is to determine if aluminum foil is electrically conductive. The aluminum foil is located around the workshop. First, focus on the aluminum foil. If it is electrically conductive, place it in the green box. If it is electrically nonconductive, place it in the blue box.","I need to locate the aluminum foil in the workshop. Since it's not in the foundry or greenhouse, I should check other areas like the kitchen or continue searching the foundry. I will look around again in the foundry to confirm.",look around,"This room is called the foundry. In it, you see: 
+	the agent
+	a substance called air
+	a blast furnace, which is turned off. The blast furnace door is closed. 
+	a sink, which is turned off. In the sink is: nothing.
+	a table. On the table is: nothing.
+You also see:
+	A door to the outside (that is open)",,,,
+scienceworld__chemistry-mix-paint-secondary-color__s13,34,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"I need to correctly pick up the orange from the bowl on the counter. I should try using the exact command format for picking up objects, specifying the container if necessary.",pick up orange from bowl on counter,No known action matches that input.,,,,
+scienceworld__test-conductivity__s8,20,scienceworld,test-conductivity,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",I need to specify the correct contact points on the battery (anode and cathode) and connect them to the aluminum foil to test its conductivity.,connect battery to aluminum foil,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",,,,
+scienceworld__find-living-thing__s5,8,scienceworld,find-living-thing,"This room is called the greenhouse. In it, you see: 
+	the agent
+	a substance called air
+	a bee hive. The bee hive door is closed. 
+	a flower pot 1 (containing a apple tree in the reproducing stage, soil)
+	a flower pot 4 (containing a cherry tree in the reproducing stage, soil)
+	a flower pot 5 (containing nothing)
+	a flower pot 7 (containing a pea plant in the reproducing stage with a tall height, soil)
+	a flower pot 9 (containing nothing)
+	a jug (containing nothing)
+	a shovel
+	a sink, which is turned off. In the sink is: nothing.
+You also see:
+	A door to the hallway (that is open)
+	A door to the outside (that is closed)","I have identified several living things in the greenhouse, such as the apple tree, cherry tree, and pea plant. I should focus on one of them, such as the pea plant, which is clearly visible.",focus on pea plant in flower pot 7,You focus on the pea plant.,,,,
+scienceworld__test-conductivity__s4,14,scienceworld,test-conductivity,"Connections must specify specific points of contact on unpolarized electrical components (e.g. terminal 1, terminal 2)",I need to connect the yellow wire to the battery's terminals properly. I should specify the correct terminal for the connection.,connect yellow wire to terminal 1 of battery,No known action matches that input.,,,,
+scienceworld__find-living-thing__s19,29,scienceworld,find-living-thing,"Task description:
+Your task is to find a(n) living thing. First, focus on the thing. Then, move it to the green box in the bedroom.","The task has been successfully completed. The bee was found, focused on, and moved to the green box in the bedroom.",task,"Task description:
+Your task is to find a(n) living thing. First, focus on the thing. Then, move it to the green box in the bedroom.",,,,
+scienceworld__test-conductivity__s19,7,scienceworld,test-conductivity,"This room is called the workshop. In it, you see: 
+	the agent
+	a substance called air
+	A aluminum foil
+	a electric motor, which is off
+	a purple box (containing nothing)
+	a table. On the table is: a battery, a black wire, a green light bulb, which is off, a orange light bulb, which is off, a red light bulb, which is off, a red wire, a switch, which is off, a yellow wire.
+	a ultra low temperature freezer. The ultra low temperature freezer door is closed. 
+	a yellow box (containing nothing)
+You also see:
+	A door to the hallway (that is open)",I have found the aluminum foil. I should focus on it to determine if it is electrically conductive.,focus on aluminum foil,You focus on the aluminum foil.,,,,
+scienceworld__test-conductivity__s2,24,scienceworld,test-conductivity,The door is now open.,I am now in the outside area. I should check if the aluminum foil is here or if I need to proceed to the hallway to find it.,go to outside,You move to the outside.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s2,8,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"I need to use the correct command to open the fridge. The valid command is ""open door to fridge"".",open door to fridge,No known action matches that input.,,,,
+scienceworld__chemistry-mix-paint-secondary-color__s11,29,scienceworld,chemistry-mix-paint-secondary-color,"This room is called the art studio. In it, you see: 
+	the agent
+	a substance called air
+	a large cupboard. The large cupboard door is closed. 
+	a table. On the table is: a jug (containing blue paint).
+	a wood cup (containing yellow paint)
+	a wood cup (containing nothing)
+	a wood cup (containing red paint)
+You also see:
+	A door to the hallway (that is open)",I found the blue paint in the jug and the yellow paint in a wood cup. I can now pour the blue paint into the yellow paint cup to create green paint.,pour blue paint in yellow paint cup,No known action matches that input.,,,,
+scienceworld__find-living-thing__s17,16,scienceworld,find-living-thing,No known action matches that input.,"The command ""pick up blue jay egg"" is not valid. I need to focus on the blue jay egg first before attempting to pick it up. I will focus on it again to ensure it is the task target.",focus on blue jay egg,No known action matches that input.,,,,
+scienceworld__find-living-thing__s10,8,scienceworld,find-living-thing,You focus on the pea plant.,"The pea plant is now the task target. I need to move it to the yellow box in the bathroom. First, I should pick up the pea plant from the flower pot.",pick up pea plant in flower pot 1,You move the pea plant to the inventory.,,,,
+scienceworld__find-living-thing__s10,20,scienceworld,find-living-thing,"This room is called the bathroom. In it, you see: 
+	the agent
+	a substance called air
+	a bathtub, which is turned off. In the bathtub is: nothing.
+	a finger painting
+	a glass cup (containing nothing)
+	a sink, which is turned off. In the sink is: nothing.
+	a toilet. In the toilet is: A drain, which is closed, a substance called water.
+	a yellow box (containing nothing)
+You also see:
+	A door to the kitchen (that is open)","I have found the yellow box in the bathroom. Now, I need to move the pea plant into the yellow box.",move pea plant to yellow box,You move the pea plant to the yellow box.,,,,
+scienceworld__find-living-thing__s0,2,scienceworld,find-living-thing,The door is now open.,"The greenhouse door is open, so I should enter to search for a living thing.",go to greenhouse,You move to the greenhouse.,,,,
+scienceworld__find-living-thing__s7,8,scienceworld,find-living-thing,You move to the hallway.,"I am back in the hallway. I need to find the bathroom, which is likely connected to the hallway. I will check the doors in the hallway to locate it.",look around,"This room is called the hallway. In it, you see: 
+	the agent
+	a substance called air
+	a drawing
+You also see:
+	A door to the art studio (that is closed)
+	A door to the bedroom (that is closed)
+	A door to the greenhouse (that is open)
+	A door to the kitchen (that is closed)
+	A door to the living room (that is closed)
+	A door to the workshop (that is closed)",,,,
+scienceworld__find-living-thing__s19,3,scienceworld,find-living-thing,The bee hive is now open.,"The bee hive is open, so I should look inside to see if there are any bees or other living things.",look in bee hive,"Inside the bee hive is: 
+	a adult bee
+	a adult bee
+	a adult bee
+	a adult bee
+	a adult bee",,,,
+scienceworld__chemistry-mix-paint-secondary-color__s13,24,scienceworld,chemistry-mix-paint-secondary-color,No known action matches that input.,"The command ""pick up orange from counter"" is not valid. I should try using the correct format for picking up objects, such as ""pick up orange"".",pick up orange,"Ambiguous request: Please enter the number for the action you intended (or blank to cancel):
+0:	pick up orange (in inventory, in agent, in kitchen)
+1:	pick up orange (in bowl, in counter, in kitchen)",,,,
+scienceworld__test-conductivity__s8,14,scienceworld,test-conductivity,You move to the workshop.,I am now in the workshop. I should look around to find the aluminum foil.,look around,"This room is called the workshop. In it, you see: 
+	the agent
+	a substance called air
+	A aluminum foil
+	a orange box (containing nothing)
+	a table. On the table is: a battery, a black wire, a blue wire, a green light bulb, which is off, a orange light bulb, which is off, a orange wire, a switch, which is off, a yellow light bulb, which is off.
+	a ultra low temperature freezer. The ultra low temperature freezer door is closed. 
+	a yellow box (containing nothing)
+You also see:
+	A door to the hallway (that is open)",,,,
+scienceworld__test-conductivity__s8,19,scienceworld,test-conductivity,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",I need to correctly identify the anode and cathode of the battery and connect them to the aluminum foil to test conductivity.,connect battery to aluminum foil,"Connections must specify specific points of contact on polarized electrical components (e.g. anode, cathode)",,,,
+scienceworld__chemistry-mix-paint-secondary-color__s17,3,scienceworld,chemistry-mix-paint-secondary-color,"This room is called the foundry. In it, you see: 
+	the agent
+	a substance called air
+	a blast furnace, which is turned off. The blast furnace door is closed. 
+	a sink, which is turned off. In the sink is: nothing.
+	a table. On the table is: nothing.
+You also see:
+	A door to the outside (that is open)",The foundry does not have the necessary materials for creating orange paint. I should check other rooms like the greenhouse or kitchen for pigments or chemicals.,open door to greenhouse,No known action matches that input.,,,,
+scienceworld__find-living-thing__s2,2,scienceworld,find-living-thing,You move to the bathroom.,"I am in the bathroom. I need to look around for any living things, such as plants, animals, or people. I should check the sink, toilet, or any containers for signs of life.",look around,"This room is called the bathroom. In it, you see: 
+	the agent
+	a substance called air
+	a bathtub, which is turned off. In the bathtub is: nothing.
+	a glass cup (containing nothing)
+	a picture
+	a sink, which is turned off. In the sink is: nothing.
+	a toilet. In the toilet is: A drain, which is closed, a substance called water.
+You also see:
+	A door to the kitchen (that is open)",,,,
+scienceworld__test-conductivity__s1,12,scienceworld,test-conductivity,"Connections must specify specific points of contact on unpolarized electrical components (e.g. terminal 1, terminal 2)",I need to specify the exact terminals on the battery to connect the red wire properly. I should identify the correct terminals on the battery.,look at battery,a battery. its anode is connected to: nothing. its cathode is connected to: nothing.,,,,

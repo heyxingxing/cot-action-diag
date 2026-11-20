@@ -1,0 +1,7 @@
+target,feature_set,cv_mean,cv_std,n_folds_used
+G3_strict (R2),I_t_only,-0.0121,0.0095,5
+G3_strict (R2),r_t_only,-0.0102,0.0106,5
+G3_strict (R2),r_t + I_t + I_t*r_t,-0.0107,0.009,5
+terminal_success (AUROC),I_t_only,0.4626,0.0383,5
+terminal_success (AUROC),r_t_only,0.6207,0.0183,5
+terminal_success (AUROC),r_t + I_t + I_t*r_t,0.5956,0.0618,5

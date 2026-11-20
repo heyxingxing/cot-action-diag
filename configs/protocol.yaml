@@ -1,0 +1,105 @@
+# ==============================================================================
+# 统一实验协议配置：Qwen/Qwen3-8B CoT -> Action 诊断实验 (E01 - E18)
+# ScienceWorld (A) 与 TextWorldExpress (B) 100% 共用本文件
+# ==============================================================================
+
+experiment:
+  name: "cot_action_diag_qwen3_8b_v1"
+  seed: 42
+
+model:
+  hf_id: "Qwen/Qwen3-8B"
+  revision: null                        # 首次拉取后自动记录真实 commit hash 到 episodes.jsonl，也可手动填死
+  dtype: "bfloat16"
+  enable_thinking: false                # 主线：关闭原生 <think>，使用显式 ReAct Thought:/Action:
+  max_context_tokens: 12288             # 超过 12K 时保留 system + Turn 0 + 最近轮次，并标 truncated=true
+
+rollout:
+  backend: "vllm"                       # 可选: vllm | hf | mock
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.85          # 独享 80G A800 留 0.85；若同卡跑别的任务可改 0.50
+  enable_prefix_caching: true           # 多轮前缀 95% 复用 KV Cache，提速 3-5 倍
+  # Qwen3-8B 官方 Non-Thinking 推荐采样参数（严禁 temperature=0，会复读退化）
+  temperature: 0.7
+  top_p: 0.8
+  top_k: 20
+  min_p: 0.0
+  presence_penalty: 0.0                 # BF16 下默认 0 保证与离线分布对齐；严重复读时再调 0.5
+  repetition_penalty: 1.0
+  max_tokens_per_turn: 256
+  stop_sequences:
+    - "\nObservation:"
+    - "\nUser:"
+    - "<|im_end|>"
+  max_turns_per_episode: 35
+  max_consecutive_parse_fails: 3        # 连续 3 步格式全坏提前终止该局
+  num_parallel_envs: 60                 # 并发 env 槽位（每个 env 独立 JVM、动态端口）；60 = 一个 Bench 的 60 局同时跑
+
+offline_scoring:
+  attn_implementation: "flash_attention_2"  # 若未装 flash-attn 会自动回退 sdpa
+  dtype: "bfloat16"
+  entropy_compute_dtype: "float32"      # 算全词表精确熵时临时转 fp32 防精度损失
+  entropy_unit: "nats"
+  scoring_temperature: 1.0              # 离线打分严禁加温或 top-p/top-k 截断
+  batch_size_turns: 1                   # 仅 Pass 4 用；bf16 下 padding 批量会引入最高 ~1 nat 的 logp 抖动，1 = 无 padding。Pass 1-3 按 turn 共享 prompt KV cache
+  save_full_vocab_logits: false         # 严禁落盘全词表 logits！仅存逐 token logprob 与 entropy
+  neutral_cot_text: "I will choose the next action based on the current observation."
+  teacher:
+    enable_self_teacher: true           # Pass 4a: 同一 Qwen3-8B 删掉历史 CoT (State-OPD)
+    enable_strong_teacher: false        # Pass 4b (可选): Qwen3-32B 删掉历史 CoT（单卡 80G bs=1 可跑）
+    strong_teacher_hf_id: "Qwen/Qwen3-32B"
+    strong_teacher_batch_size: 1
+
+metrics:
+  future_horizons: [3, 5]               # E08 未来 3 步和 5 步收益
+  bootstrap_resamples: 1000             # E09 Episode-level Cluster Bootstrap 次数
+  manual_audit_turns_per_bench: 80      # E14 每 Bench 分层抽样标注条数
+
+# ==============================================================================
+# 两个 Benchmark 的任务配置（各 3 类 × 20 局 = 60 局；smoke-test 自动取前 5 局）
+# ==============================================================================
+benchmarks:
+  scienceworld:
+    simplification_str: ""
+    env_step_limit: 35
+    smoke_episodes:
+      - {task_id: "find-living-thing", difficulty_tier: "L1", seed: 0}
+      - {task_id: "find-living-thing", difficulty_tier: "L1", seed: 1}
+      - {task_id: "chemistry-mix-paint-secondary-color", difficulty_tier: "L2", seed: 0}
+      - {task_id: "chemistry-mix-paint-secondary-color", difficulty_tier: "L2", seed: 1}
+      - {task_id: "test-conductivity", difficulty_tier: "L3", seed: 0}
+    tasks:
+      - task_id: "find-living-thing"
+        difficulty_tier: "L1"
+        seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+      - task_id: "chemistry-mix-paint-secondary-color"
+        # melt was replaced: its gold path needs a median of 34 steps (<=25 in only 4/20 variations), near-infeasible within 35 steps
+        difficulty_tier: "L2"
+        seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+      - task_id: "test-conductivity"
+        difficulty_tier: "L3"
+        seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+
+  textworld_express:
+    game_fold: "dev"                    # 把 train/test 留给后续 RL 训练与终测，避免数据泄露
+    env_step_limit: 35
+    smoke_episodes:
+      - {task_id: "coin",         difficulty_tier: "L1", seed: 1000, game_params: "numLocations=7,includeDoors=1"}
+      - {task_id: "coin",         difficulty_tier: "L1", seed: 1001, game_params: "numLocations=7,includeDoors=1"}
+      - {task_id: "mapreader",    difficulty_tier: "L2", seed: 1000, game_params: "numLocations=11,includeDoors=1"}
+      - {task_id: "mapreader",    difficulty_tier: "L2", seed: 1001, game_params: "numLocations=11,includeDoors=1"}
+      - {task_id: "cookingworld", difficulty_tier: "L3", seed: 1000, game_params: "numLocations=5,numIngredients=3,includeDoors=1"}
+    tasks:
+      - task_id: "coin"
+        difficulty_tier: "L1"
+        game_params: "numLocations=7,includeDoors=1"
+        seeds: [1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019]
+      - task_id: "mapreader"
+        difficulty_tier: "L2"
+        # 7 locations cannot generate the default maxDistanceApart=4 (dev seed 1000 crashes); 11 locations generates all 20 dev seeds (gold path 7-13 steps)
+        game_params: "numLocations=11,includeDoors=1"
+        seeds: [1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019]
+      - task_id: "cookingworld"
+        difficulty_tier: "L3"
+        game_params: "numLocations=5,numIngredients=3,includeDoors=1"
+        seeds: [1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019]
