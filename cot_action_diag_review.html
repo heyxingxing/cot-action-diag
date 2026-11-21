@@ -1,0 +1,2163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CoT→Action 离线诊断复盘与实验重设计指南</title>
+<meta name="description" content="基于 Qwen3-8B 在 ScienceWorld 与 TextWorldExpress 上 3,299 步实测数据的现象归因、三类评估范式辨析与 1× A800 改造方案" />
+<link rel="stylesheet" href="assets/katex/katex.min.css" />
+<script src="assets/katex/katex.min.js"></script>
+<script src="assets/katex/contrib/auto-render.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --soft: #f7f6f2;
+    --soft-2: #efede6;
+    --border: #e2dfd6;
+    --rule: #222222;
+    --text: #1b1b1b;
+    --muted: #5b5850;
+    --faint: #8d897f;
+    --accent: #1f4e79;
+    --accent-soft: #eaf0f6;
+    --pos: #1e6b47;
+    --pos-soft: #f1f8f4;
+    --neg: #a3262c;
+    --neg-soft: #fbf2f2;
+    --warn: #8a5a00;
+    --warn-soft: #fbf6ea;
+    --violet: #5b3f8c;
+    --violet-soft: #f6f3fa;
+    --serif: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", "Georgia", "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  html { color-scheme: light; scroll-behavior: smooth; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--serif);
+    font-size: 16px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .katex { font-size: 1.04em; }
+  .katex-display { margin: 12px 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(31,78,121,.28); }
+  a:hover { border-bottom-color: var(--accent); }
+  code { font-family: var(--mono); font-size: .84em; background: var(--soft); padding: .08em .35em; border-radius: 3px; color: #222; }
+  pre {
+    margin: 10px 0 14px;
+    padding: 12px 14px;
+    background: var(--soft);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12.8px;
+    line-height: 1.58;
+    color: var(--text);
+  }
+  pre code { background: transparent; padding: 0; font-size: inherit; }
+  p { margin: 0 0 12px; }
+
+  /* Masthead — strict child combinator > so .katex internal spans are never matched */
+  .masthead { border-bottom: 1px solid var(--border); padding: 44px 20px 26px; text-align: center; }
+  .masthead h1 { font-size: 29px; font-weight: 600; line-height: 1.35; margin: 0 0 8px; }
+  .masthead .sub { font-size: 16.5px; color: var(--muted); margin: 0 0 14px; max-width: 860px; margin-left: auto; margin-right: auto; }
+  .masthead .meta { font-family: var(--sans); font-size: 13px; color: var(--muted); }
+  .masthead .meta > span + span::before { content: "·"; margin: 0 9px; color: var(--faint); }
+  .masthead > .meta + .meta { margin-top: 8px; }
+  .masthead .meta a.nav-cur { color: var(--text); font-weight: 600; border-bottom: 1.5px solid var(--text); }
+
+  /* Sticky Tabs */
+  nav.tabs {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: rgba(255,255,255,.96);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--border);
+  }
+  .tabs-inner { max-width: 1220px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; overflow-x: auto; }
+  .tab-btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+    padding: 12px 14px;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--text); font-weight: 600; }
+
+  main { max-width: 1220px; margin: 0 auto; padding: 30px 16px 92px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .prose { max-width: 920px; }
+  .wide-block { max-width: 1180px; margin: 18px 0 28px; }
+
+  h2.sec { font-size: 22px; font-weight: 600; margin: 44px 0 14px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .tab-panel > h2.sec:first-child, .tab-panel > .prose > h2.sec:first-child { margin-top: 0; }
+  h2.sec .n { color: var(--faint); font-weight: 500; margin-right: 10px; font-family: var(--sans); }
+  h3.sub { font-size: 17.5px; font-weight: 600; margin: 26px 0 9px; }
+  h4.mini { font-family: var(--sans); font-size: 14px; font-weight: 600; margin: 16px 0 6px; color: var(--text); }
+  .note { font-size: 14px; color: var(--muted); }
+  .abstract { background: var(--soft); border-left: 3px solid var(--accent); padding: 16px 20px; margin: 0 0 18px; }
+  .abstract p:last-child { margin-bottom: 0; }
+
+  .callout-box { border: 1px solid var(--border); border-left: 3px solid var(--accent); background: #faf9f6; border-radius: 4px; padding: 13px 16px; margin: 14px 0 18px; font-size: 15px; }
+  .callout-box.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .callout-box.pos { border-left-color: var(--pos); background: var(--pos-soft); }
+  .callout-box p:last-child { margin-bottom: 0; }
+
+  ol.findings { padding-left: 1.45em; margin: 0 0 14px; }
+  ol.findings > li { margin-bottom: 12px; padding-left: 4px; }
+  ul.plain { padding-left: 1.3em; margin: 0 0 12px; }
+  ul.plain > li { margin-bottom: 6px; }
+
+  /* booktabs three-line tables */
+  .table-wrap { overflow-x: auto; margin: 12px 0 6px; }
+  table.booktabs {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14.2px;
+    font-variant-numeric: tabular-nums lining-nums;
+    border-top: 1.5px solid var(--rule);
+    border-bottom: 1.5px solid var(--rule);
+  }
+  table.booktabs thead th {
+    border-bottom: 1px solid var(--rule);
+    font-weight: 600;
+    text-align: left;
+    padding: 7px 10px;
+    white-space: nowrap;
+    vertical-align: bottom;
+    font-family: var(--sans);
+    font-size: 13.2px;
+  }
+  table.booktabs thead tr.group th { border-bottom: 1px solid var(--border); text-align: center; }
+  table.booktabs td { padding: 7px 10px; vertical-align: top; border-bottom: 1px solid #efede6; line-height: 1.58; }
+  table.booktabs tbody tr:last-child td { border-bottom: 0; }
+  table.booktabs th.num, table.booktabs td.num { text-align: right; white-space: nowrap; }
+  table.booktabs th.ctr, table.booktabs td.ctr { text-align: center; }
+  table.booktabs tr.em td { background: #f6f3ea; }
+  table.booktabs tr.sep td { border-top: 1px solid var(--rule); }
+  .caption { font-size: 13.8px; color: var(--muted); margin: 6px 0 18px; }
+  .pos-txt { color: var(--pos); font-weight: 600; }
+  .neg-txt { color: var(--neg); font-weight: 600; }
+  .warn-txt { color: var(--warn); font-weight: 600; }
+  .muted-txt { color: var(--muted); }
+
+  /* Tags & Segmented Controls */
+  .tag {
+    display: inline-block;
+    font-family: var(--sans);
+    font-size: 11.5px;
+    font-weight: 500;
+    padding: 0 7px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: #fff;
+    white-space: nowrap;
+    line-height: 1.75;
+  }
+  .tag.pos { color: var(--pos); border-color: #b9d6c6; background: var(--pos-soft); }
+  .tag.neg { color: var(--neg); border-color: #e3c0c2; background: var(--neg-soft); }
+  .tag.acc { color: var(--accent); border-color: #c4d4e4; background: var(--accent-soft); }
+  .tag.vio { color: var(--violet); border-color: #d6cde6; background: var(--violet-soft); }
+  .tag.warn { color: var(--warn); border-color: #e6d4ad; background: var(--warn-soft); }
+
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-family: var(--sans); }
+  .seg-btn {
+    appearance: none;
+    border: 0;
+    background: #fff;
+    padding: 6px 13px;
+    font-size: 13px;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: background .12s, color .12s;
+  }
+  .seg-btn + .seg-btn { border-left: 1px solid var(--border); }
+  .seg-btn:hover { color: var(--text); background: var(--soft); }
+  .seg-btn.active { background: var(--text); color: #fff; font-weight: 500; }
+
+  /* Schematic Paradigm Cards (Tab 1) */
+  .paradigm-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin: 16px 0 24px; }
+  .paradigm-card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+    background: #fff;
+  }
+  .paradigm-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .paradigm-title { font-size: 17px; font-weight: 600; margin: 0; }
+  .flow-lane {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    background: var(--soft);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 10px 12px;
+    margin: 8px 0;
+    font-family: var(--sans);
+    font-size: 13px;
+  }
+  .flow-node {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 9px;
+    line-height: 1.45;
+  }
+  .flow-node.hl-acc { border-color: #9ab7d3; background: var(--accent-soft); color: #143654; }
+  .flow-node.hl-pos { border-color: #a9cfb9; background: var(--pos-soft); color: #154d33; }
+  .flow-node.hl-neg { border-color: #deb2b5; background: var(--neg-soft); color: #7d1b20; }
+  .flow-node.hl-warn { border-color: #dfc690; background: var(--warn-soft); color: #694400; }
+  .flow-arrow { width: 22px; height: 12px; flex: 0 0 auto; display: inline-block; vertical-align: middle; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 14px 0 20px; }
+  .info-card { border: 1px solid var(--border); border-radius: 6px; padding: 15px 17px; background: #fff; }
+  .info-card h4 { margin: 0 0 8px; font-size: 15.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  /* Academic SVG + KaTeX Chart Stage (Tab 2 & Tab 4) */
+  figure.diag-fig {
+    margin: 18px 0 28px;
+    padding: 16px 18px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+  }
+  .fig-head { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+  .fig-kicker { font-family: var(--sans); font-size: 12px; color: var(--muted); letter-spacing: .03em; }
+  .fig-name { font-size: 16.5px; font-weight: 600; margin: 2px 0 0; }
+  .legend-row { display: flex; flex-wrap: wrap; gap: 14px; font-family: var(--sans); font-size: 12.5px; color: var(--muted); margin: 4px 0 10px; align-items: center; }
+  .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .swatch.round { border-radius: 50%; }
+
+  .chart-shell { position: relative; padding: 10px 18px 38px 62px; }
+  .plot-box {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 640 / 230;
+    border-left: 1.5px solid var(--rule);
+    border-bottom: 1.5px solid var(--rule);
+    background: #fff;
+  }
+  .plot-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+  .y-tick {
+    position: absolute;
+    left: -8px;
+    transform: translate(-100%, 50%);
+    font-size: 12.5px;
+    color: var(--muted);
+    white-space: nowrap;
+    line-height: 1;
+  }
+  .x-tick {
+    position: absolute;
+    bottom: -8px;
+    transform: translate(-50%, 100%);
+    font-size: 12.5px;
+    color: var(--muted);
+    white-space: nowrap;
+    line-height: 1.2;
+    text-align: center;
+  }
+  .y-axis-lbl {
+    position: absolute;
+    left: 6px;
+    top: -6px;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .x-axis-lbl {
+    text-align: center;
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .plot-callout {
+    position: absolute;
+    background: rgba(255,255,255,.94);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.45;
+    pointer-events: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }
+  .fig-readout {
+    margin-top: 8px;
+    padding: 7px 11px;
+    background: var(--soft);
+    border-radius: 4px;
+    font-family: var(--sans);
+    font-size: 13px;
+    color: var(--text);
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Horizontal bar rows for discrete breakdowns */
+  .hbar-list { display: grid; gap: 9px; margin: 10px 0 6px; font-family: var(--sans); font-size: 13.2px; }
+  .hbar-row { display: grid; grid-template-columns: 250px minmax(0, 1fr) 120px; gap: 12px; align-items: center; }
+  .hbar-track { height: 18px; background: var(--soft-2); border-radius: 3px; overflow: hidden; position: relative; display: flex; }
+  .hbar-fill { height: 100%; transition: width .2s ease; }
+  .hbar-val { text-align: right; white-space: nowrap; color: var(--text); }
+
+  /* Tab 3 Interactive Protocol Walkthrough */
+  .wt-controls {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--soft);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    display: grid;
+    gap: 12px;
+  }
+  .wt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .wt-lbl { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--muted); min-width: 96px; }
+  .wt-status-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .wt-stat-card {
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 10px 12px;
+    background: #fff;
+    font-family: var(--sans);
+  }
+  .wt-stat-k { font-size: 11.8px; color: var(--muted); margin-bottom: 3px; }
+  .wt-stat-v { font-size: 13.8px; font-weight: 600; color: var(--text); line-height: 1.4; }
+  .wt-main { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+  .wt-pane { border: 1px solid var(--border); border-radius: 6px; background: #fff; overflow: hidden; }
+  .wt-pane-head {
+    padding: 10px 14px;
+    background: var(--soft);
+    border-bottom: 1px solid var(--border);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .wt-pane-body { padding: 13px 15px; }
+  .msg-block {
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 8px 11px;
+    margin-bottom: 8px;
+    font-family: var(--mono);
+    font-size: 12.4px;
+    line-height: 1.55;
+    background: #fff;
+  }
+  .msg-block.sys { background: #f9f8f4; color: var(--muted); }
+  .msg-block.usr { background: #fff; border-left: 3px solid var(--border); }
+  .msg-block.ast-keep { background: #fffdf7; border-left: 3px solid var(--warn); }
+  .msg-block.ast-strip { background: var(--neg-soft); border-left: 3px solid var(--neg); }
+  .msg-block.ast-neu { background: var(--pos-soft); border-left: 3px solid var(--pos); }
+  .msg-block.ast-target { background: var(--accent-soft); border-left: 3px solid var(--accent); }
+  .msg-role { font-family: var(--sans); font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 3px; display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+  .tok-lock { background: #fbe5e6; color: #8c1d22; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+  .tok-samp { background: #dff2e8; color: #145938; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+  .tok-leak { background: #faeccf; color: #754a00; padding: 1px 4px; border-radius: 3px; }
+  .tok-muted { color: var(--faint); text-decoration: line-through; }
+
+  /* Tab 4 Stage Cards */
+  .stage-card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 20px;
+    margin-bottom: 20px;
+    background: #fff;
+  }
+  .stage-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+  }
+  .stage-title { font-size: 18px; font-weight: 600; margin: 0; }
+  .diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 10px 0 12px; }
+  .diff-box { border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+  .diff-hdr { font-family: var(--sans); font-size: 12px; font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  .diff-hdr.old { background: var(--neg-soft); color: var(--neg); }
+  .diff-hdr.new { background: var(--pos-soft); color: var(--pos); }
+  .diff-box pre { margin: 0; border: 0; border-radius: 0; background: #fff; font-size: 12.2px; }
+
+  footer.foot {
+    margin-top: 52px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  @media (max-width: 940px) {
+    .two-col, .wt-main, .diff-grid { grid-template-columns: 1fr; }
+    .wt-status-grid { grid-template-columns: 1fr 1fr; }
+    .hbar-row { grid-template-columns: 1fr; gap: 4px; }
+    .hbar-val { text-align: left; }
+    .masthead h1 { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <h1>CoT→Action 离线诊断复盘与实验重设计指南</h1>
+  <p class="sub">基于 Qwen3-8B 在 ScienceWorld 与 TextWorldExpress 上 $3{,}299$ 步实测数据的现象归因、三类评估范式辨析与 $1\times$ A800 改造方案</p>
+  <div class="meta">
+    <span>诊断范围：<a href="index.html"><code>cot_action_diag</code>（E01–E18）</a></span>
+    <span>实测规模：$120$ 局 / $3{,}299$ 步</span>
+    <span>运行基线：$1\times$ NVIDIA A800-80GB（vLLM + HF Transformers）</span>
+    <span><a href="https://github.com/heyxingxing/cot-action-diag">代码与数据</a></span>
+  </div>
+  <div class="meta" aria-label="系列报告导航">
+    <span><a href="index.html">第一轮诊断报告</a></span>
+    <span><a href="cot_action_diag_review.html" class="nav-cur" aria-current="page">第一轮诊断问题复盘与重设计</a></span>
+    <span><a href="field_experimental_protocols.html">领域 $37$ 篇实验方案对比</a></span>
+    <span><a href="interactive_credit_explorer.html"><code>C3A</code> 合成 MDP 与交互计算器</a></span>
+  </div>
+</header>
+
+<nav class="tabs" aria-label="章节导航">
+  <div class="tabs-inner">
+    <button class="tab-btn active" data-tab="concepts">$1$ · 概念厘清与方法分工</button>
+    <button class="tab-btn" data-tab="diagnosis">$2$ · 原实验（$3{,}299$ 步）五大问题定量诊断</button>
+    <button class="tab-btn" data-tab="walkthrough">$3$ · 交互式流程对比演示器</button>
+    <button class="tab-btn" data-tab="redesign">$4$ · $1\times$ A800 具体重跑修改方案</button>
+  </div>
+</nav>
+
+<main>
+
+<!-- ======================================================================= -->
+<!-- TAB 1: 概念厘清与方法分工                                                 -->
+<!-- ======================================================================= -->
+<section id="concepts" class="tab-panel active">
+  <div class="prose">
+    <h2 class="sec"><span class="n">$1.0$</span>核心结论导读：为什么看离线指标容易混淆？</h2>
+    <div class="abstract">
+      <p><strong>原实验呈现的表面现象并不能说明“生成 CoT 对动作选择没有益处”。</strong> 在 <code>cot_action_diag</code> 已跑完的 $120$ 局（$3{,}299$ 步）数据中，桥梁指标 $I_t$ 中位数接近 $0$（ScienceWorld 为 $0.0046$，TextWorldExpress 为 $0.0268$）、与单步奖励负相关（$\rho = -0.217$ 与 $-0.268$）、约 $80\%$ 的步落入 $(\hat{A}_t < 0,\, I_t > 0)$ 象限、且 Pass 4 自蒸馏差距 $D_{\mathrm{self}}$ 在约 $98\%$ 的步上为负。</p>
+      <p>之所以看这些数字容易发晕，根本原因在于把<strong>三个完全不同的实验问题</strong>混在了一起：$(1)$ <strong>生成 CoT 能否提高整局做题成功率？</strong>（需跑在线对照）；$(2)$ <strong>站在同一第 $k$ 步状态上，隐去 CoT 会不会让模型改选别的动作 $a_k'$？</strong>（需跑单步重解码或分叉采样）；$(3)$ <strong>锁死已经选出的原动作 $a_k$ 不变，删掉当前 CoT 会让这个固定动作的对数概率掉多少？</strong>（原实验 <code>02_score_offline.py</code> 实际做的事）。理清这三件事的边界以及 <code>vLLM</code> 与 <code>HF Transformers</code> 的工程分工，所有反常数字都能得到精确解释。</p>
+    </div>
+
+    <h2 class="sec"><span class="n">$1.1$</span>三类完全不同的实验问题与评估范式</h2>
+    <p>在多轮交互环境（ReAct 轨迹：$o_0 \to z_0, a_0 \to o_1 \to \dots \to o_k \to z_k, a_k$）中，“评估 CoT 的作用”对应三种截然不同的操作协议。下方的流程示意图与表 $1.1$ 逐一给出它们的输入、动作采样方式与适用边界。</p>
+  </div>
+
+  <!-- Visual Schematic Diagrams of Paradigm A / B / C -->
+  <div class="wide-block paradigm-grid">
+    <!-- Paradigm A -->
+    <div class="paradigm-card">
+      <div class="paradigm-head">
+        <h3 class="paradigm-title">范式 A · 整局有/无 CoT 在线对照（Episode-Level Rollout，$120$ 题全流程对比）</h3>
+        <div>
+          <span class="tag acc">执行引擎：vLLM + 环境并发交互</span>
+          <span class="tag pos">直接回答：生成 CoT 能否提升任务总成功率？</span>
+        </div>
+      </div>
+      <p class="note">固定完全相同的 $120$ 个任务种子，分别独立运行完整轨迹。两组一旦在某一步选了不同动作，后续到达的房间和观察 $o_{t+1}'$ 也会自然分叉，最终直接比较终局通关率与总得分。</p>
+      <div class="flow-lane">
+        <div class="flow-node"><strong>有 CoT 组：</strong>相同种子 $s$，初始观察 $o_0$</div>
+        <svg class="flow-arrow" viewBox="0 0 22 12"><line x1="0" y1="6" x2="16" y2="6" stroke="#5b5850" stroke-width="1.4"/><polygon points="16,2.5 22,6 16,9.5" fill="#5b5850"/></svg>
+        <div class="flow-node hl-acc">vLLM 自回归生成 $z_t \to a_t$</div>
+        <svg class="flow-arrow" viewBox="0 0 22 12"><line x1="0" y1="6" x2="16" y2="6" stroke="#5b5850" stroke-width="1.4"/><polygon points="16,2.5 22,6 16,9.5" fill="#5b5850"/></svg>
+        <div class="flow-node">环境步进 $o_{t+1} \sim \mathcal{T}(s_t, a_t)$（循环至终局 $T$）</div>
+        <svg class="flow-arrow" viewBox="0 0 22 12"><line x1="0" y1="6" x2="16" y2="6" stroke="#5b5850" stroke-width="1.4"/><polygon points="16,2.5 22,6 16,9.5" fill="#5b5850"/></svg>
+        <div class="flow-node hl-pos">统计终局成功率 $\mathbb{E}[S_{\mathrm{succ}}^{\mathrm{cot}}]$</div>
+      </div>
+      <div class="flow-lane">
+        <div class="flow-node"><strong>无 CoT 组：</strong>相同种子 $s$，初始观察 $o_0$</div>
+        <svg class="flow-arrow" viewBox="0 0 22 12"><line x1="0" y1="6" x2="16" y2="6" stroke="#5b5850" stroke-width="1.4"/><polygon points="16,2.5 22,6 16,9.5" fill="#5b5850"/></svg>
+        <div class="flow-node hl-warn">vLLM 直接生成纯动作 $a_t'$（或中性句 $+ a_t'$）</div>
+        <svg class="flow-arrow" viewBox="0 0 22 12"><line x1="0" y1="6" x2="16" y2="6" stroke="#5b5850" stroke-width="1.4"/><polygon points="16,2.5 22,6 16,9.5" fill="#5b5850"/></svg>
+        <div class="flow-node">进入各自的真实环境分支 $o_{t+1}'$（循环至终局 $T'$）</div>
+        <svg class="flow-arrow" viewBox="0 0 22 12"><line x1="0" y1="6" x2="16" y2="6" stroke="#5b5850" stroke-width="1.4"/><polygon points="16,2.5 22,6 16,9.5" fill="#5b5850"/></svg>
+        <div class="flow-node hl-pos">对比差值 $\Delta S_{\mathrm{succ}} = \mathbb{E}[S^{\mathrm{cot}}] - \mathbb{E}[S^{\mathrm{no\text{-}cot}}]$</div>
+      </div>
+    </div>
+
+    <!-- Paradigm B -->
+    <div class="paradigm-card">
+      <div class="paradigm-head">
+        <h3 class="paradigm-title">范式 B · 第 $k$ 步单步反事实干预（Turn $k$ Counterfactual Intervention）</h3>
+        <div>
+          <span class="tag vio">直接回应“从第 $k$ 步切入重测”的设计方案</span>
+          <span class="tag acc">执行引擎：vLLM 批量采样</span>
+        </div>
+      </div>
+      <p class="note">严格对齐前 $k-1$ 步走出的环境状态 $s_k$（消除轨迹漂移混杂），在第 $k$ 步隐去或中性化当前 CoT，让模型<strong>自由重采样新动作 $a_k'$</strong>。包含<strong>“往后怎么走（B1 vs. B2）”</strong>与<strong>“前 $k-1$ 步历史 CoT 怎么处理（保留 vs. 遮蔽）”</strong>两个正交维度：</p>
+      <div class="flow-lane">
+        <div class="flow-node"><strong>B1 · 单步重解码（推荐，极快）：</strong>固定第 $k$ 步状态与前缀</div>
+        <svg class="flow-arrow" viewBox="0 0 22 12"><line x1="0" y1="6" x2="16" y2="6" stroke="#5b5850" stroke-width="1.4"/><polygon points="16,2.5 22,6 16,9.5" fill="#5b5850"/></svg>
+        <div class="flow-node hl-acc">隐去第 $k$ 步 CoT，vLLM 重采样新动作 $a_k' \sim \pi(\cdot\mid \tilde{h}_k, \varnothing)$</div>
+        <svg class="flow-arrow" viewBox="0 0 22 12"><line x1="0" y1="6" x2="16" y2="6" stroke="#5b5850" stroke-width="1.4"/><polygon points="16,2.5 22,6 16,9.5" fill="#5b5850"/></svg>
+        <div class="flow-node hl-pos"><strong>不重跑后续整局！</strong>直接对比 $a_k'$ vs. $a_k$ 的改变率、合法率 $\Delta v_k$ 与单步进度差（全量 $3{,}299$ 步仅需 $1\text{–}3$ 分钟）</div>
+      </div>
+      <div class="flow-lane">
+        <div class="flow-node"><strong>B2 · 分叉重跑整局（昂贵）：</strong>在第 $k$ 步采出 $a_k'$</div>
+        <svg class="flow-arrow" viewBox="0 0 22 12"><line x1="0" y1="6" x2="16" y2="6" stroke="#5b5850" stroke-width="1.4"/><polygon points="16,2.5 22,6 16,9.5" fill="#5b5850"/></svg>
+        <div class="flow-node hl-warn">克隆环境状态并继续交互跑完 $k+1 \dots T$（每步分叉 $M$ 条）</div>
+        <svg class="flow-arrow" viewBox="0 0 22 12"><line x1="0" y1="6" x2="16" y2="6" stroke="#5b5850" stroke-width="1.4"/><polygon points="16,2.5 22,6 16,9.5" fill="#5b5850"/></svg>
+        <div class="flow-node">得到精确长程价值差 $\hat{Q}(s_k, a_k) - \hat{Q}(s_k, a_k')$，但全量跑需约 $6.6\times 10^4$ 步（仅适合关键步抽样）</div>
+      </div>
+      <div class="two-col" style="margin:10px 0 2px;">
+        <div class="info-card" style="background:#fcfbf8;padding:11px 14px;">
+          <h4>口径 $\text{B}_{\mathrm{keep}}$：保留前 $0\dots k-1$ 步历史 <code>Thought:</code></h4>
+          <p class="note" style="margin:0;">输入 $(h_k^{\mathrm{full}}, \varnothing)$。测的是<strong>第 $k$ 步单步思考的边际增量效应（Marginal Effect）</strong>。若第 $0$ 步或第 $k-1$ 步的 <code>Thought:</code> 已经写明下一步计划（实测 SW 有 $12.4\%$ 的步直接提前写出后续动作），模型读历史思考即可选出同动作。</p>
+        </div>
+        <div class="info-card" style="background:#fcfbf8;padding:11px 14px;">
+          <h4>口径 $\text{B}_{\mathrm{mask}}$：将前 $0\dots k-1$ 步历史 <code>Thought:</code> 换成两行中性句</h4>
+          <p class="note" style="margin:0;">输入 $(h_k^{\mathrm{neu}}, \varnothing)$。测的是<strong>截至第 $k$ 步整条思维链的累积效应（Cumulative Effect）</strong>。既剥离了历史思考跨步泄漏，又保留了 <code>Thought:\nAction:</code> 两行输出模板，避免单行 <code>Action:</code> 引发格式突变。</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Paradigm C -->
+    <div class="paradigm-card">
+      <div class="paradigm-head">
+        <h3 class="paradigm-title">范式 C · 固定轨迹离线 Teacher-Forcing 打分（原实验 <code>02_score_offline.py</code> Pass 1–4）</h3>
+        <div>
+          <span class="tag warn">原动作 $a_k$ 被锁死，不重采样新动作</span>
+          <span class="tag acc">执行引擎：HF Transformers 单次前向</span>
+        </div>
+      </div>
+      <p class="note">完全不与环境交互，也不让模型重选动作，而是把原轨迹已生成的动作 token 序列 $a_k$ 原封不动拼在三种前缀后面，计算<strong>同一个动作 $a_k$ 的对数似然变化</strong>：</p>
+      <div class="flow-lane">
+        <div class="flow-node">已落盘样本 $(h_k, z_k, a_k)$</div>
+        <svg class="flow-arrow" viewBox="0 0 22 12"><line x1="0" y1="6" x2="16" y2="6" stroke="#5b5850" stroke-width="1.4"/><polygon points="16,2.5 22,6 16,9.5" fill="#5b5850"/></svg>
+        <div class="flow-node hl-neg"><strong>锁死 $a_k$ 的 token IDs 不变！</strong>分别拼接 $(h_k, z_k, a_k)$ 与 $(h_k, \varnothing, a_k)$</div>
+        <svg class="flow-arrow" viewBox="0 0 22 12"><line x1="0" y1="6" x2="16" y2="6" stroke="#5b5850" stroke-width="1.4"/><polygon points="16,2.5 22,6 16,9.5" fill="#5b5850"/></svg>
+        <div class="flow-node hl-acc">HF 单次前向算出 $I_k = \frac{1}{|a_k|}[\log\pi(a_k\mid h_k,z_k) - \log\pi(a_k\mid h_k,\varnothing)]$ 及精确熵 $H^C, H^A$</div>
+      </div>
+      <div class="callout-box warn" style="margin:8px 0 0;">
+        <p><strong>为什么单靠范式 C 测不出“CoT 好不好”，但它在 RL 训练里仍然有用？</strong> 因为 $I_k$ 只回答“这段 CoT 把原动作 $a_k$ 的概率推高了多少”：若模型在 <code>Thought:</code> 里先误写了一条非法指令再原样照抄到 <code>Action:</code>，删掉 <code>Thought:</code> 后模型本来不会选该非法指令，此时 $I_k$ 反而很大（正值）；反之若目标就在眼前，无 CoT 概率已近 $100\%$，再好的推理也只能测出 $I_k \approx 0$。<strong>但在 RL 训练内部</strong>，一旦外层通过同种子多轨迹采样拿到了真实动作好坏优势 $A_k^{\mathrm{act}}$，$I_k$ 就能作为低成本门控权重 $g(I_k) \in [0,1]$，用来判定“该动作的功过有多少应归因于当步 CoT”。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table 1.1: Paradigm Comparison -->
+  <div class="wide-block">
+    <div class="table-wrap">
+      <table class="booktabs">
+        <thead>
+          <tr>
+            <th>评估范式</th>
+            <th>回答的核心问题</th>
+            <th>第 $k$ 步动作</th>
+            <th>前 $k-1$ 步 <code>Thought:</code></th>
+            <th>后续环境交互</th>
+            <th>推理引擎</th>
+            <th class="num">$1\times$ A800 耗时</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>范式 A · 整局有/无 CoT 对照</strong></td>
+            <td>生成 CoT 能否提升整局通关率与总得分？</td>
+            <td>每步在线自由采样</td>
+            <td>有 CoT 组全保留；无 CoT 组全程不生成（或中性句）</td>
+            <td>完整交互至终局 $T$（$120$ 局）</td>
+            <td><code>vLLM</code></td>
+            <td class="num">$\approx 5.5\text{–}8\text{ min}$ / 组</td>
+          </tr>
+          <tr class="em">
+            <td><strong>范式 B1 · 第 $k$ 步单步重解码（$\text{B}_{\mathrm{keep}}$）</strong></td>
+            <td>给定相同状态与前序思考，<strong>当步 CoT</strong> 是否改变动作并减少当步报错？</td>
+            <td><span class="pos-txt">重采样新动作 $a_k'$</span></td>
+            <td>保留 $0\dots k-1$ 步原 <code>Thought:</code>（测当步边际效应）</td>
+            <td>不跑后续整局；仅可选单步判合法 $v(a_k')$</td>
+            <td><code>vLLM</code></td>
+            <td class="num">$\approx 1\text{–}2\text{ min}$（全量步）</td>
+          </tr>
+          <tr class="em">
+            <td><strong>范式 B1 · 第 $k$ 步单步重解码（$\text{B}_{\mathrm{mask}}$）</strong></td>
+            <td>给定相同状态轨迹，<strong>截至第 $k$ 步的累积 CoT</strong> 共改变了多少决策？</td>
+            <td><span class="pos-txt">重采样新动作 $a_k'$</span></td>
+            <td>前 $k-1$ 步全部替换为两行中性占位句（测累积效应）</td>
+            <td>不跑后续整局；仅可选单步判合法 $v(a_k')$</td>
+            <td><code>vLLM</code></td>
+            <td class="num">$\approx 1\text{–}2\text{ min}$（全量步）</td>
+          </tr>
+          <tr>
+            <td><strong>范式 B2 · 第 $k$ 步分叉重跑整局</strong></td>
+            <td>第 $k$ 步改选 $a_k'$ 对稀疏终局回报的真实长程价值差 $\Delta Q_k$ 是多少？</td>
+            <td><span class="pos-txt">重采样新动作 $a_k'$</span></td>
+            <td>可选 $\text{B}_{\mathrm{keep}}$ 或 $\text{B}_{\mathrm{mask}}$</td>
+            <td>从第 $k$ 步克隆环境重跑至终局 $T$</td>
+            <td><code>vLLM</code></td>
+            <td class="num">全量 $\approx 2\text{–}3\text{ h}$；抽样 $200$ 步 $\approx 10\text{ min}$</td>
+          </tr>
+          <tr>
+            <td><strong>范式 C · 离线 Pass 1–4 打分（原实验）</strong></td>
+            <td>已选动作 $a_k$ 的概率受当前 CoT 推高多少？（RL 内部信用分配门控）</td>
+            <td><span class="neg-txt">锁死原动作 $a_k$ 不变</span></td>
+            <td>原 Pass 2/3 保留历史思考；原 Pass 4 删成单行 <code>Action:</code></td>
+            <td>$0$ 次环境交互（纯离线算概率）</td>
+            <td><code>HF Transformers</code></td>
+            <td class="num">实测 $23.2\text{ min}$（$3{,}299$ 步）</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">表 $1.1$　三类评估范式在因果口径、动作自由度、历史上下文处理与 $1\times$ A800 实际耗时上的完整对比。上次实验仅执行了最后一行（范式 C），缺少范式 A 与范式 B1 对照。</p>
+  </div>
+
+  <!-- Section 1.2: vLLM vs HF Transformers -->
+  <div class="prose">
+    <h2 class="sec"><span class="n">$1.2$</span>为什么代码要分成 <code>vLLM</code> 与 <code>HF Transformers</code> 两套引擎？</h2>
+    <p>不少同学在看仓库时会疑惑：既然模型都是同一个本地 <code>Qwen3-8B</code>（<code>bfloat16</code>），为什么 <code>01_run_rollout.py</code> 用 <code>vLLM</code>，而 <code>02_score_offline.py</code> 又切回 <code>HF Transformers</code>？两者并不是重复造轮子，而是针对<strong>“自回归逐词生成”</strong>与<strong>“已知完整序列算全词表精确分布”</strong>两种完全不同的底层计算形态做的分工：</p>
+  </div>
+
+  <div class="wide-block two-col">
+    <div class="info-card">
+      <h4><code>vLLM</code> 负责：在线交互采样与第 $k$ 步重解码 <span class="tag acc">范式 A / B1 / B2</span></h4>
+      <ul class="plain">
+        <li><strong>计算形态（Memory-Bound 循环解码）：</strong>模型不知道自己接下来会写出哪几个词，必须生成第 $1$ 个 token $\to$ 拼回输入 $\to$ 生成第 $2$ 个 token，生成完 <code>Action:</code> 还要暂停等待 Java 环境（ScienceWorld / TextWorldExpress）执行并返回下一步观察文本。</li>
+        <li><strong>核心加速机制：</strong>开启 <code>enable_prefix_caching: true</code> 与 $60$ 个并发环境槽位后，同一局相邻轮次之间约 $95\%$ 的历史对话 KV Cache 直接命中复用，Continuous Batching 动态合并不同进度的环境请求。</li>
+        <li><strong>A800 实测速度：</strong>ScienceWorld $60$ 局（$1{,}924$ 步）仅耗时 <strong>$3\text{ 分 }52\text{ 秒}$</strong>；TextWorldExpress $60$ 局（$1{,}375$ 步）仅耗时 <strong>$57\text{ 秒}$</strong>。若改用 <code>HF model.generate()</code> 逐条跑，耗时将拉长约 $10$ 倍。</li>
+        <li><strong>为什么不直接拿它做 Pass 1–4 全词表熵？</strong> <code>vLLM</code> 的生成采样接口默认只截取并返回概率最高的 $K$ 个（通常上限 $20$）候选词的 logprob，不直接暴露任意反事实拼接序列在完整词表（$|\mathcal{V}| = 151{,}936$）上的未截断 FP32 logits。</li>
+      </ul>
+    </div>
+
+    <div class="info-card">
+      <h4><code>HF Transformers</code> 负责：固定序列 Pass 1–4 对数似然与精确香农熵 <span class="tag vio">范式 C</span></h4>
+      <ul class="plain">
+        <li><strong>计算形态（Compute-Bound 单次并行前向）：</strong>在 <code>02_score_offline.py</code> 中，整条序列 <code>prompt_ids + cot_ids + action_ids</code> 的每一个 token ID 都已确定，无需循环生成，调一次 <code>decoder(input_ids)</code> 即可在单次前向传播中同时算出所有位置的隐状态。</li>
+        <li><strong>全词表 $151{,}936$ 维精确熵与显存裁剪：</strong>若对整条 $4{,}000$ token 序列全量算 <code>lm_head</code>，<code>[B, L, 151936]</code> 张量在 <code>bs=4</code> 时会占约 $15\text{ GB}$ 显存。<code>02_score_offline.py</code>（第 $98\text{–}129$ 行）先只跑 <code>model.get_decoder()</code>，<strong>仅切出目标 CoT / Action 对应的几十个位置过 <code>lm_head</code> 并转 <code>float32</code></strong>，无截断精确计算：
+          $$H_{t,i} = -\sum_{v=1}^{151{,}936} \pi(v \mid h_t, z_{t,&lt;i}) \log \pi(v \mid h_t, z_{t,&lt;i})$$
+          将峰值显存开销降低了约 $60$ 倍。</li>
+        <li><strong>共享前缀 KV 裁剪：</strong>Pass 1（原 CoT）、Pass 2（空 CoT）、Pass 3（中性 CoT）共享完全相同的 <code>prompt_token_ids</code>，代码先编码一次前缀并用 <code>cache.crop(p_len)</code> 反复回滚后缀，省去约 $2/3$ 重复计算（全量 $3{,}299$ 步四趟总计耗时 <strong>$23.2\text{ 分钟}$</strong>）。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="wide-block">
+    <div class="table-wrap">
+      <table class="booktabs">
+        <thead>
+          <tr>
+            <th>对比维度</th>
+            <th><code>vLLM</code>（<code>01_run_rollout.py</code> 及新增 <code>02b_redecode_turn_k.py</code>）</th>
+            <th><code>HF Transformers</code>（<code>02_score_offline.py</code>）</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>输入序列状态</strong></td>
+            <td>仅给定截止当前步的提示前缀 <code>prompt_token_ids</code>，后续 token 未知</td>
+            <td>前缀 + 目标 CoT + 目标 Action 的完整 token IDs 全部固定已知</td>
+          </tr>
+          <tr>
+            <td><strong>前向传播方式</strong></td>
+            <td>逐 token 自回归采样（<code>temperature=0.7, top_p=0.8, top_k=20</code>）</td>
+            <td>单次 Teacher-Forcing 并行前向（<code>temperature=1.0</code>，无任何采样截断）</td>
+          </tr>
+          <tr>
+            <td><strong>词表信息粒度</strong></td>
+            <td>采样出一个具体 token ID 序列（如新动作 $a_k'$）</td>
+            <td>对目标切片提取完整 $|\mathcal{V}| = 151{,}936$ 维 <code>float32</code> 分布，算精确熵与对数似然</td>
+          </tr>
+          <tr>
+            <td><strong>分词对齐保障</strong></td>
+            <td>直接落盘模型原始生成的 <code>generated_token_ids</code>，不经字符串重编码</td>
+            <td>直接复用落盘的 <code>prompt_token_ids</code> 与 <code>act_ids</code>，硬断言校验 $3{,}848/3{,}848$（SW）与 $2{,}750/2{,}750$（TWX）切片逐位一致</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">表 $1.2$　<code>vLLM</code> 与 <code>HF Transformers</code> 在本诊断框架中的精确技术分工。</p>
+  </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- TAB 2: 原实验（3,299 步）五大问题定量诊断                                 -->
+<!-- ======================================================================= -->
+<section id="diagnosis" class="tab-panel">
+  <div class="prose">
+    <h2 class="sec"><span class="n">$2.0$</span>全量 $3{,}299$ 步实测归因总览</h2>
+    <p>对 <code>data/scienceworld_full</code>（$60$ 局，$1{,}924$ 步）与 <code>data/textworld_express_full</code>（$60$ 局，$1{,}375$ 步）的逐轮文本、token 切片指标与源码逐行核对后，原实验呈现出负面假象的根源可归纳为以下五项可精确定量验证的机制问题（表 $2.1$）。</p>
+  </div>
+
+  <div class="wide-block">
+    <div class="table-wrap">
+      <table class="booktabs">
+        <thead>
+          <tr>
+            <th class="ctr">编号</th>
+            <th>核心问题定位</th>
+            <th>涉及源码 / 配置位置</th>
+            <th>基于 $3{,}299$ 步全量数据的关键统计证据</th>
+            <th>对表面指标的扭曲方向</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="ctr"><strong>$1$</strong></td>
+            <td><strong>$I_t$ 退化为无 CoT 惊讶度 + 显见拿分步天花板混杂</strong></td>
+            <td><code>02_score_offline.py:562-575</code></td>
+            <td>$I_t$ 与 $-\frac{1}{|a_t|}\log\pi(a_t\mid h_t,\varnothing)$ 的 Pearson $r = 0.9998$（SW）/ $0.9995$（TWX）；$r_t &gt; 0$ 拿分步的无 CoT 惊讶度中位数为 $0.0000$，而 $r_t = 0$ 步均值在 TWX 高达其 $24.2\times$</td>
+            <td>简单收尾拿分步因概率上限被截断在 $I_t \approx 0$，跨难度层混合产生 $\rho(I_t, r_t) &lt; 0$ 的辛普森悖论</td>
+          </tr>
+          <tr>
+            <td class="ctr"><strong>$2$</strong></td>
+            <td><strong>Pass 2/3 历史前缀保留前 $t-1$ 步 <code>Thought:</code> 跨步泄漏</strong></td>
+            <td><code>01_run_rollout.py:380</code><br/><code>tokenization.py:250</code></td>
+            <td>$t \ge 1$ 的 $100\%$ 样本在 $h_t$ 中含前序 <code>Thought:</code>；$I_t$ 中位数从 $t=0$ 的 $2.0791$（SW）/ $2.7063$（TWX）在 $t=1$ 骤降至 $0.0000$ / $0.0017$；$12.4\%$ 的 SW 步动作已在 $t-1$ 步思考中逐字写出</td>
+            <td>Pass 2/3 只测到第 $t$ 步相对前序计划的边际增量，造成“$t \ge 1$ 绝大多数步 $I_t \approx 0$”</td>
+          </tr>
+          <tr>
+            <td class="ctr"><strong>$3$</strong></td>
+            <td><strong>关闭 <code>enable_thinking</code> + 限 $1\text{–}3$ 句导致“动作复述旁白”</strong></td>
+            <td><code>protocol_a800.yaml:14</code><br/><code>src/prompts.py:12</code></td>
+            <td>CoT 均长仅 $29.70$ tokens，$79.9\%$ $\le 2$ 句；$48.8\%$ 包含动作全部实词，$20.9\%$ 逐字原样包含完整动作命令（$12.4\%$ 带引号写出）</td>
+            <td>短旁白退化为“先口头宣布动作、再照抄输出”；哪怕口头宣布的是非法动作，也会测出高 $I_t &gt; 0$</td>
+          </tr>
+          <tr>
+            <td class="ctr"><strong>$4$</strong></td>
+            <td><strong>$4/6$ 任务成败零方差 + <code>v2</code> 说明书两处措辞诱发 $33.5\%$ 打转</strong></td>
+            <td><code>protocol_a800.yaml:71</code><br/><code>src/prompts.py:25-38</code></td>
+            <td>$3/6$ 任务 $0/20$、$1/6$ 任务 $20/20$（占总步数 $68.7\%$）；SW 原地重复报错步占 $33.5\%$（<code>open door to greenhouse</code> $121\times$，对容器套用 <code>open door to</code> $96\times$，照抄括号后缀 $31\times$）</td>
+            <td>全局统计被零方差退化任务与报错复读噪声淹没，掩盖了有区分度任务内的真实正向纠错信号</td>
+          </tr>
+          <tr>
+            <td class="ctr"><strong>$5$</strong></td>
+            <td><strong>短窗口中心化 $\hat{A}_t$ 误伤成功铺垫步 + Pass 4 单行历史格式突变</strong></td>
+            <td><code>02_score_offline.py:344</code><br/><code>src/prompts.py:197-215</code></td>
+            <td>终局成功局内部仍有 $39.22\%$（SW）/ $61.45\%$（TWX）的步被判为 $\hat{A}_t &lt; 0$；Pass 4 的 $D_{\mathrm{self}}$ 在 $t=0$ 均值为 $+0.0001$ / $+0.0012$，在 $t \ge 1$ 负值率跃升至 $99.84\%$ / $100.00\%$</td>
+            <td>人为制造约 $80\%$ 步落入 $(\hat{A}_t &lt; 0, I_t &gt; 0)$ 象限，并使 $D_{\mathrm{self}}$ 几乎全负（与负权重相乘即反转方向）</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">表 $2.1$　<code>cot_action_diag</code> 全量 $3{,}299$ 步离线诊断五大核心问题的源码定位与实测统计汇总。</p>
+  </div>
+
+  <!-- ==================== DIAGNOSIS 1 ==================== -->
+  <div class="prose">
+    <h2 class="sec"><span class="n">$2.1$</span>问题一：$I_t \approx -\frac{1}{|a_t|}\log\pi(a_t \mid h_t, \varnothing)$ 恒等退化与状态显见度混杂</h2>
+    <p>离线打分脚本定义的桥梁指标为两项长度归一化对数概率之差：</p>
+    $$I_t = \underbrace{\frac{1}{|a_t|}\log \pi(a_t \mid h_t, z_t)}_{\text{Pass 1：含当前 CoT（均值 }-0.0085\text{ / }-0.0176\text{）}} - \underbrace{\frac{1}{|a_t|}\log \pi(a_t \mid h_t, \varnothing)}_{\text{Pass 2：空 CoT（均值 }-0.8480\text{ / }-1.3076\text{）}}$$
+    <p>实测表明，一旦模型写完 <code>Thought:</code>，后续 <code>Action:</code> 几乎已成定局（SW 有 $95.2\%$ 的步单 token 平均动作概率 $&gt;95\%$，中位数对数概率严格为 $0.0000$；TWX 有 $92.8\%$ 的步 $&gt;95\%$）。第一项方差几乎为 $0$，导致 $I_t$ 超过 $99.9\%$ 的方差直接由第二项<strong>无 CoT 基础动作惊讶度</strong> $-\frac{1}{|a_t|}\log\pi(a_t \mid h_t, \varnothing)$ 决定（SW Pearson $r = 0.9998, R^2 = 0.9996$；TWX Pearson $r = 0.9995, R^2 = 0.9991$）。</p>
+    <p>这一恒等关系立刻解释了为什么全局会出现 $\mathrm{Corr}(I_t, r_t) &lt; 0$：由于 $\log\pi(a_t \mid h_t, z_t) \le 0$，数学上恒有上界 $I_t \le -\frac{1}{|a_t|}\log\pi(a_t \mid h_t, \varnothing)$。而在两个环境中，单步正奖励（$r_t &gt; 0$，仅占 SW 的 $7.8\%$、TWX 的 $5.2\%$）高度集中在<strong>目标已出现在眼前、无需思考即可确定动作的收尾步</strong>（如 TWX 的 $71$ 个拿分步中有 $66$ 步为直接 <code>take</code> 或 <code>put</code>，占 $93.0\%$）：</p>
+    <ul class="plain">
+      <li>在 <strong>$r_t &gt; 0$ 的显见拿分步</strong>上，无 CoT 基础惊讶度中位数在两边均为 <strong>$0.0000$</strong>（TWX 均值仅 $0.0568$，SW 均值 $0.3554$），因此 $I_t$ 被概率天花板严格截断在 $0$；</li>
+      <li>在 <strong>$r_t = 0$ 的多房间寻路与受阻步</strong>上，面对多个出口分支，无 CoT 基础惊讶度升高至 $0.8827$（SW）与 $1.3757$（TWX，为拿分步的 <strong>$24.2\times$</strong>），$I_t$ 均值随之升至 $0.8736$ 与 $1.3573$。</li>
+    </ul>
+  </div>
+
+  <!-- Interactive Chart 2.1 -->
+  <div class="wide-block">
+    <figure class="diag-fig">
+      <div class="fig-head">
+        <div>
+          <div class="fig-kicker">实测图表 $2.1$ · 基于 turn_metrics.jsonl 全量分位采样点</div>
+          <div class="fig-name">$I_t$ 与无 CoT 基础动作惊讶度的 $y = x$ 恒等退化及拿分步天花板截断</div>
+        </div>
+        <div class="seg" id="c1-bench-seg">
+          <button class="seg-btn active" data-bench="sw">ScienceWorld（$n=1{,}924, r=0.9998$）</button>
+          <button class="seg-btn" data-bench="tw">TextWorldExpress（$n=1{,}375, r=0.9995$）</button>
+        </div>
+      </div>
+      <div class="legend-row">
+        <span><i class="swatch round" style="background:var(--pos);"></i>单步拿分步 $r_t &gt; 0$（集中钉在左下角 $(0,0)$ 天花板处）</span>
+        <span><i class="swatch round" style="background:var(--accent);"></i>零奖励探索步 $r_t = 0$（严格沿 $y = x$ 对角线分布）</span>
+        <span><i class="swatch" style="background:var(--faint);height:2px;vertical-align:middle;"></i>理论恒等上界 $I_t = -\frac{1}{|a_t|}\log\pi(a_t\mid h_t,\varnothing)$</span>
+      </div>
+      <div class="chart-shell" id="chart-identity-box"></div>
+      <div class="x-axis-lbl">无 CoT 基础动作惊讶度 $-\frac{1}{|a_t|}\log\pi(a_t \mid h_t, \varnothing)$（nats / token）</div>
+      <div class="fig-readout" id="c1-readout"></div>
+    </figure>
+
+    <!-- Table 2.2: Stratified Quartiles -->
+    <div class="table-wrap">
+      <table class="booktabs">
+        <thead>
+          <tr class="group">
+            <th></th>
+            <th colspan="4">ScienceWorld（去打转步，$n=1{,}279$）</th>
+            <th colspan="4">TextWorldExpress（去打转步，$n=1{,}173$）</th>
+          </tr>
+          <tr>
+            <th>无 CoT 惊讶度四分位分层（控制状态固有分支难度）</th>
+            <th class="num">样本数 / 拿分率</th>
+            <th class="num">$I_{\mathrm{neu}}$ 均值</th>
+            <th class="num">$\rho(I_{\mathrm{neu}}, r_t)$</th>
+            <th class="num">$\rho(I_{\mathrm{neu}}, S_{\mathrm{succ}})$</th>
+            <th class="num">样本数 / 拿分率</th>
+            <th class="num">$I_{\mathrm{neu}}$ 均值</th>
+            <th class="num">$\rho(I_{\mathrm{neu}}, r_t)$</th>
+            <th class="num">$\rho(I_{\mathrm{neu}}, S_{\mathrm{succ}})$</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Q1 · 动作完全确定</strong>（惊讶度 $\approx 0$，收尾显见步）</td>
+            <td class="num">$320$ / <span class="pos-txt">$26.9\%$</span></td>
+            <td class="num">$-0.000$</td>
+            <td class="num">$-0.186$</td>
+            <td class="num">$-0.082$</td>
+            <td class="num">$293$ / <span class="pos-txt">$20.5\%$</span></td>
+            <td class="num">$-0.001$</td>
+            <td class="num">$-0.270$</td>
+            <td class="num">$-0.277$</td>
+          </tr>
+          <tr>
+            <td><strong>Q2 · 低不确定度</strong></td>
+            <td class="num">$319$ / $9.4\%$</td>
+            <td class="num">$0.017$</td>
+            <td class="num">$-0.107$</td>
+            <td class="num">$+0.071$</td>
+            <td class="num">$293$ / $2.7\%$</td>
+            <td class="num">$0.012$</td>
+            <td class="num">$-0.107$</td>
+            <td class="num">$-0.031$</td>
+          </tr>
+          <tr class="em">
+            <td><strong>Q3 · 中等分支选择</strong>（真正需要抉择的非平凡步）</td>
+            <td class="num">$320$ / $5.6\%$</td>
+            <td class="num">$0.587$</td>
+            <td class="num"><span class="pos-txt">$+0.030$</span></td>
+            <td class="num"><span class="pos-txt">$+0.085$</span></td>
+            <td class="num">$293$ / $1.0\%$</td>
+            <td class="num">$1.071$</td>
+            <td class="num"><span class="pos-txt">$+0.014$</span></td>
+            <td class="num"><span class="pos-txt">$+0.019$</span></td>
+          </tr>
+          <tr class="em">
+            <td><strong>Q4 · 高歧义 / 受阻探索</strong></td>
+            <td class="num">$320$ / $5.0\%$</td>
+            <td class="num">$4.228$</td>
+            <td class="num">$-0.092$</td>
+            <td class="num">$-0.008$</td>
+            <td class="num">$294$ / $0.0\%$</td>
+            <td class="num">$5.588$</td>
+            <td class="num"><span class="pos-txt">$0.000$</span></td>
+            <td class="num"><span class="pos-txt">$+0.053$</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">表 $2.2$　按无 CoT 动作惊讶度做四分位分层后，全局负相关（$-0.252$ / $-0.303$）在中等分支层 Q3 与高歧义层 Q4 中消失甚至转正，证实全局负相关主要由 Q1（高拿分率且 $I_t \approx 0$）与 Q3–Q4（低即时拿分率且高 $I_t$）跨层混合造成。</p>
+  </div>
+
+  <!-- ==================== DIAGNOSIS 2 & 5 DEPTH CLIFF ==================== -->
+  <div class="prose">
+    <h2 class="sec"><span class="n">$2.2$</span>问题二：Pass 2/3 历史上下文保留前 $t-1$ 步 <code>Thought:</code> 造成的跨步思考泄漏</h2>
+    <p>核查 <code>src/tokenization.py</code>（第 $250\text{–}260$ 行）可见，Pass 2（空 CoT）与 Pass 3（中性句 CoT）仅替换了当前第 $t$ 步的 <code>Thought:</code>，而输入前缀 <code>prompt_token_ids</code> 中<strong>$100.0\%$ 保留了第 $0, 1, \dots, t-1$ 步的所有历史 <code>Thought:</code> 原文</strong>（覆盖全部 $1{,}864$ 个 SW $t\ge 1$ 步与 $1{,}315$ 个 TWX $t\ge 1$ 步）。</p>
+    <p>在多步任务里，模型常在前一步思考中提前写好连贯计划——实测在 $t \ge 1$ 的步中，有 <strong>$12.4\%$（SW）与 $8.7\%$（TWX）</strong> 的当前完整动作字符串已经在第 $t-1$ 步的 <code>Thought:</code> 中逐字出现过（例如 $t=0$ 思考写 <em>“open the door to the hallway first, then go to the hallway”</em>，$t=1$ 即便删掉当步思考，自注意力直接读取 $t=0$ 的思考即可 $100\%$ 写出 <code>go to hallway</code>）。因此：</p>
+    <ul class="plain">
+      <li>在<strong>没有任何历史思考可依赖的第 $t = 0$ 步</strong>（$120$ 步），两套基准的 $I_t$ 中位数高达 <strong>$2.0791$（SW）与 $2.7063$（TWX）</strong>，$65.0\%$ 与 $73.3\%$ 的步满足 $I_t &gt; 0.5$；</li>
+      <li>从<strong>第 $t = 1$ 步起</strong>，由于历史思考已写入上下文，$I_t$ 中位数立刻骤降至 <strong>$0.0000$（SW）与 $0.0017$（TWX）</strong>。这说明 $t \ge 1$ 时大量 $I_t \approx 0$ 反映的是“早期思考跨步持续生效”，而非“不需要思考”。</li>
+    </ul>
+  </div>
+
+  <div class="wide-block">
+    <figure class="diag-fig">
+      <div class="fig-head">
+        <div>
+          <div class="fig-kicker">实测图表 $2.2$ · 轮次深度 $t=0$ 与 $t \ge 1$ 的断层对照（同时揭示问题二与问题五）</div>
+          <div class="fig-name">随轮次 $t$ 推进：$I_t$ 因历史思考泄漏在 $t=1$ 骤降，$D_{\mathrm{self}}$ 因单行历史格式突变在 $t=1$ 陡降为负</div>
+        </div>
+        <div class="seg" id="c2-metric-seg">
+          <button class="seg-btn active" data-m="I_med">问题二：$I_t$ 中位数（$t=0 \to t \ge 1$ 跨步泄漏）</button>
+          <button class="seg-btn" data-m="I_mean">问题二：$I_t$ 均值</button>
+          <button class="seg-btn" data-m="D_mean">问题五：$D_{\mathrm{self}}$ 均值（$t=0 \to t \ge 1$ 格式突变）</button>
+        </div>
+      </div>
+      <div class="legend-row">
+        <span><i class="swatch round" style="background:var(--accent);"></i>ScienceWorld（$60$ 局，$1{,}924$ 步）</span>
+        <span><i class="swatch round" style="background:var(--violet);"></i>TextWorldExpress（$60$ 局，$1{,}375$ 步）</span>
+        <span class="muted-txt">点击右上角按钮切换查看 $I_t$ 中位数、$I_t$ 均值与 Pass 4 的 $D_{\mathrm{self}}$ 断层曲线</span>
+      </div>
+      <div class="chart-shell" id="chart-depth-box"></div>
+      <div class="x-axis-lbl">交互轮次区间 $t$（注意 $t=0$ 尚无任何历史助手消息，是检验上下文污染的天然零基线）</div>
+      <div class="fig-readout" id="c2-readout"></div>
+    </figure>
+
+    <div class="table-wrap">
+      <table class="booktabs">
+        <thead>
+          <tr class="group">
+            <th></th>
+            <th colspan="4">ScienceWorld（$n=1{,}924$）</th>
+            <th colspan="4">TextWorldExpress（$n=1{,}375$）</th>
+          </tr>
+          <tr>
+            <th>轮次区间 $t$</th>
+            <th class="num">步数 $n$</th>
+            <th class="num">$I_t$ 均值 / 中位数</th>
+            <th class="num">$I_t &gt; 0.5$ 占比</th>
+            <th class="num">$D_{\mathrm{self}}$ 均值（负值率）</th>
+            <th class="num">步数 $n$</th>
+            <th class="num">$I_t$ 均值 / 中位数</th>
+            <th class="num">$I_t &gt; 0.5$ 占比</th>
+            <th class="num">$D_{\mathrm{self}}$ 均值（负值率）</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="em">
+            <td><strong>$t = 0$（无历史消息基线）</strong></td>
+            <td class="num">$60$</td>
+            <td class="num">$3.127$ / <strong>$2.0791$</strong></td>
+            <td class="num"><span class="pos-txt">$65.0\%$</span></td>
+            <td class="num"><span class="pos-txt">$+0.0001$</span>（$55.0\%$）</td>
+            <td class="num">$60$</td>
+            <td class="num">$3.035$ / <strong>$2.7063$</strong></td>
+            <td class="num"><span class="pos-txt">$73.3\%$</span></td>
+            <td class="num"><span class="pos-txt">$+0.0012$</span>（$51.7\%$）</td>
+          </tr>
+          <tr>
+            <td><strong>$t = 1$（首次引入 $1$ 条历史）</strong></td>
+            <td class="num">$60$</td>
+            <td class="num">$0.832$ / <span class="neg-txt">$0.0000$</span></td>
+            <td class="num">$25.0\%$</td>
+            <td class="num"><span class="neg-txt">$-0.6934$（$100.0\%$）</span></td>
+            <td class="num">$56$</td>
+            <td class="num">$1.571$ / <span class="neg-txt">$0.0017$</span></td>
+            <td class="num">$39.3\%$</td>
+            <td class="num"><span class="neg-txt">$-0.7596$（$100.0\%$）</span></td>
+          </tr>
+          <tr>
+            <td>$t = 2$</td>
+            <td class="num">$60$</td>
+            <td class="num">$1.160$ / $0.0076$</td>
+            <td class="num">$26.7\%$</td>
+            <td class="num">$-0.7525$（$100.0\%$）</td>
+            <td class="num">$56$</td>
+            <td class="num">$1.727$ / $0.0379$</td>
+            <td class="num">$37.5\%$</td>
+            <td class="num">$-1.0550$（$100.0\%$）</td>
+          </tr>
+          <tr>
+            <td>$t = 3\text{–}4$</td>
+            <td class="num">$120$</td>
+            <td class="num">$1.038$ / $0.0601$</td>
+            <td class="num">$35.0\%$</td>
+            <td class="num">$-0.9160$（$99.2\%$）</td>
+            <td class="num">$105$</td>
+            <td class="num">$1.337$ / $0.0055$</td>
+            <td class="num">$34.3\%$</td>
+            <td class="num">$-1.2821$（$100.0\%$）</td>
+          </tr>
+          <tr>
+            <td>$t = 5\text{–}9$</td>
+            <td class="num">$300$</td>
+            <td class="num">$0.893$ / $0.0162$</td>
+            <td class="num">$30.0\%$</td>
+            <td class="num">$-1.0242$（$99.3\%$）</td>
+            <td class="num">$228$</td>
+            <td class="num">$1.277$ / $0.0139$</td>
+            <td class="num">$33.8\%$</td>
+            <td class="num">$-1.6526$（$100.0\%$）</td>
+          </tr>
+          <tr>
+            <td>$t = 10\text{–}19$</td>
+            <td class="num">$581$</td>
+            <td class="num">$0.786$ / $0.0031$</td>
+            <td class="num">$22.7\%$</td>
+            <td class="num">$-1.1693$（$100.0\%$）</td>
+            <td class="num">$377$</td>
+            <td class="num">$1.119$ / $0.0181$</td>
+            <td class="num">$31.8\%$</td>
+            <td class="num">$-1.7798$（$100.0\%$）</td>
+          </tr>
+          <tr>
+            <td>$t = 20\text{–}34$</td>
+            <td class="num">$743$</td>
+            <td class="num">$0.618$ / $0.0036$</td>
+            <td class="num">$19.1\%$</td>
+            <td class="num">$-1.3186$（$100.0\%$）</td>
+            <td class="num">$493$</td>
+            <td class="num">$1.123$ / $0.0321$</td>
+            <td class="num">$32.3\%$</td>
+            <td class="num">$-1.7275$（$100.0\%$）</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">表 $2.3$　全量 $3{,}299$ 步按轮次深度 $t$ 分层的实测统计。$t=0$ 到 $t=1$ 的一步之隔同时触发了两项剧烈跳变：Pass 2/3 因历史思考残留导致 $I_t$ 中位数归零；Pass 4 因历史 <code>Thought:</code> 行被删光导致 $D_{\mathrm{self}}$ 负值率从约 $53\%$ 跃升至 $100\%$。</p>
+  </div>
+
+  <!-- ==================== DIAGNOSIS 3 ==================== -->
+  <div class="prose">
+    <h2 class="sec"><span class="n">$2.3$</span>问题三：<code>enable_thinking: false</code> 叠加 $1\text{–}3$ 句限长，使 CoT 退化为 $29.7$ token“动作复述旁白”</h2>
+    <p>配置文件 <code>configs/protocol_a800.yaml</code> 第 $14$ 行设置了 <code>enable_thinking: false</code>（关闭了 Qwen3-8B 原生训练过的 <code>&lt;think&gt;</code> 长链推理模式），同时 <code>src/prompts.py</code> 第 $12$ 行要求 <code>&lt;concise reasoning in 1-3 sentences about the current state and next step&gt;</code>。统计全部 $3{,}299$ 步原始文本可见，模型生成的并不是状态核对或分支排除，而是简短的<strong>动作预演旁白（Action Echo）</strong>：</p>
+  </div>
+
+  <div class="wide-block">
+    <figure class="diag-fig">
+      <div class="fig-head">
+        <div>
+          <div class="fig-kicker">实测图表 $2.3$ · 全量 $3{,}299$ 步 Thought 文本结构统计</div>
+          <div class="fig-name">平均长度仅 $29.70$ tokens（中位数 $29$，四分位距 $[25, 34]$），近半数直接复述即将执行的动作实词</div>
+        </div>
+      </div>
+      <div class="hbar-list">
+        <div class="hbar-row">
+          <div>句数不超过 $3$ 句（模板约束上限）</div>
+          <div class="hbar-track"><div class="hbar-fill" style="width:99.6%;background:var(--accent);"></div></div>
+          <div class="hbar-val">$99.6\%$（$3{,}285$ 步）</div>
+        </div>
+        <div class="hbar-row">
+          <div>句数不超过 $2$ 句（极短旁白）</div>
+          <div class="hbar-track"><div class="hbar-fill" style="width:79.9%;background:var(--accent);"></div></div>
+          <div class="hbar-val">$79.9\%$（$2{,}636$ 步）</div>
+        </div>
+        <div class="hbar-row">
+          <div>SW 以 <code>"I need to / I should / I will"</code> 开头</div>
+          <div class="hbar-track"><div class="hbar-fill" style="width:60.0%;background:var(--warn);"></div></div>
+          <div class="hbar-val">$60.0\%$（$1{,}154$ 步）</div>
+        </div>
+        <div class="hbar-row">
+          <div><strong>包含 <code>Action</code> 命令的全部实词（动词+宾语）</strong></div>
+          <div class="hbar-track"><div class="hbar-fill" style="width:48.8%;background:var(--neg);"></div></div>
+          <div class="hbar-val"><strong>$48.8\%$</strong>（$1{,}609$ 步）</div>
+        </div>
+        <div class="hbar-row">
+          <div>SW 含因果/条件/排除连接词（<code>because/if/instead</code> 等）</div>
+          <div class="hbar-track"><div class="hbar-fill" style="width:22.3%;background:var(--pos);"></div></div>
+          <div class="hbar-val">$22.3\%$（$429$ 步）</div>
+        </div>
+        <div class="hbar-row">
+          <div><strong>逐字符原样包含完整 <code>Action</code> 命令字符串</strong></div>
+          <div class="hbar-track"><div class="hbar-fill" style="width:20.9%;background:var(--neg);"></div></div>
+          <div class="hbar-val"><strong>$20.9\%$</strong>（$689$ 步）</div>
+        </div>
+        <div class="hbar-row">
+          <div>直接在 <code>Thought:</code> 中用引号写出 <code>"&lt;action&gt;"</code></div>
+          <div class="hbar-track"><div class="hbar-fill" style="width:12.4%;background:var(--neg);"></div></div>
+          <div class="hbar-val">$12.4\%$（$409$ 步）</div>
+        </div>
+      </div>
+      <p class="caption" style="margin-bottom:0;">当 CoT 退化为动作复述旁白时，若模型在受阻时先在 <code>Thought:</code> 里随机拍板写出一条非法命令（例如真实样本 <code>scienceworld__find-living-thing__s6</code> 第 $6$ 步：<code>Thought: I made a mistake in the command. The correct command to go to the bathroom is "go to bathroom"...</code> $\to$ <code>Action: go to bathroom</code>），<code>Action:</code> 段照抄该命令的概率接近 $100\%$，而删掉该旁白后模型原本不会重复这条刚报过错的命令（$\log\pi = -10.50$），结果离线算出的 $I_6 = +3.50$ 极高，但动作本身完全非法（<code>action_valid = False</code>）。</p>
+    </figure>
+  </div>
+
+  <!-- ==================== DIAGNOSIS 4 ==================== -->
+  <div class="prose">
+    <h2 class="sec"><span class="n">$2.4$</span>问题四：$4/6$ 任务成败零方差退化，且 <code>v2</code> 说明书两处措辞诱发 $33.5\%$ 原地打转</h2>
+    <p>全量实验共评测 $6$ 类任务（每类 $20$ 局），其中 <strong>$4$ 类任务在终局成败上完全没有方差</strong>：$3$ 类 $0/20$ 全败（SW <code>chemistry-mix-paint-secondary-color</code> $681$ 步、SW <code>test-conductivity</code> $697$ 步、TWX <code>cookingworld</code> $693$ 步），$1$ 类 $20/20$ 全胜饱和（TWX <code>mapreader</code> $197$ 步，$I_t$ 中位数为 $0.0000$）。这 $4$ 类退化任务占去了 <strong>$2{,}268 / 3{,}299 = 68.7\%$</strong> 的总步数。</p>
+    <p>更严重的是，在 E01 试水中将旧简短提示词（<code>v1</code>）换成详细接口说明书（<code>v2</code>，见 <code>src/prompts.py</code> 第 $24\text{–}39$ 行）后，SW 重复报错率反而从 <strong>$19.4\%$ 上升至 $52.6\%$</strong>（全量实验 SW 原地打转步高达 <strong>$645 / 1{,}924 = 33.5\%$</strong>，其中化学混色单任务打转率达 $53.2\%$）。逐条核查全部 $846$ 个打转步，根源精确锁定在 <code>src/prompts.py</code> 的两句规则上：</p>
+    <ol class="findings">
+      <li><strong><code>"open door to LOC"</code> 规则过度泛化（诱发跨房间强行开门 $153\times$ + 对容器套用开门句式 $96\times$）：</strong> 第 $27\text{–}28$ 行写明 <code>the door to it must be open (use "open door to LOC" first)</code>。当模型身处并不与温室直接相连的房间导致 <code>go to greenhouse</code> 报错时，模型机械归因为“门没开”，在原地连续几十步重复输出 <code>open door to greenhouse</code>（全量出现 <strong>$121\times$</strong>，<code>open door to hallway</code> $32\times$）；甚至把该句式套用到非房间容器上，连续重复 <code>open door to bee hive</code>（<strong>$40\times$</strong>）、<code>open door to fridge</code>（<strong>$28\times$</strong>）、<code>open door to closet</code>（<strong>$28\times$</strong>，三类容器合计 $96\times$）。</li>
+      <li><strong><code>"names exactly as they appear in observations"</code> 与括号状态后缀直接冲突：</strong> 第 $25, 38$ 行强制要求逐字使用观察中的完整名称。但 ScienceWorld 观察会把容器内状态拼在括号里，如 <code>a wood cup (containing blue paint)</code>，而环境解析器拒绝括号状态后缀并返回泛化报错 <code>No known action matches that input.</code>。模型在下一步思考中写道 <em>“making sure to use the exact name as observed”</em>，连续复读 <code>pick up wood cup (containing blue paint)</code> <strong>$31\times$</strong>、<code>look at wood cup (containing yellow paint)</code> <strong>$29\times$</strong>、<code>focus on pea plant in the reproducing stage...</code> <strong>$28\times$</strong>。</li>
+    </ol>
+  </div>
+
+  <div class="wide-block">
+    <div class="two-col">
+      <div class="info-card">
+        <h4>$6$ 类任务的终局通关率与打转占比 <span class="tag warn">$68.7\%$ 步数无成败方差</span></h4>
+        <div class="hbar-list" style="margin-top:12px;">
+          <div class="hbar-row" style="grid-template-columns:175px minmax(0,1fr) 92px;">
+            <div>SW <code>find-living-thing</code></div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:40%;background:var(--pos);"></div></div>
+            <div class="hbar-val"><span class="pos-txt">$8/20$（$40\%$）</span></div>
+          </div>
+          <div class="hbar-row" style="grid-template-columns:175px minmax(0,1fr) 92px;">
+            <div>SW <code>mix-paint</code>（打转 $53.2\%$）</div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:2%;background:var(--neg);"></div></div>
+            <div class="hbar-val"><span class="neg-txt">$0/20$（$0\%$）</span></div>
+          </div>
+          <div class="hbar-row" style="grid-template-columns:175px minmax(0,1fr) 92px;">
+            <div>SW <code>test-conductivity</code></div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:2%;background:var(--neg);"></div></div>
+            <div class="hbar-val"><span class="neg-txt">$0/20$（$0\%$）</span></div>
+          </div>
+          <div class="hbar-row" style="grid-template-columns:175px minmax(0,1fr) 92px;">
+            <div>TWX <code>coin</code></div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:50%;background:var(--pos);"></div></div>
+            <div class="hbar-val"><span class="pos-txt">$10/20$（$50\%$）</span></div>
+          </div>
+          <div class="hbar-row" style="grid-template-columns:175px minmax(0,1fr) 92px;">
+            <div>TWX <code>mapreader</code>（饱和）</div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:100%;background:var(--warn);"></div></div>
+            <div class="hbar-val"><span class="warn-txt">$20/20$（$100\%$）</span></div>
+          </div>
+          <div class="hbar-row" style="grid-template-columns:175px minmax(0,1fr) 92px;">
+            <div>TWX <code>cookingworld</code></div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:2%;background:var(--neg);"></div></div>
+            <div class="hbar-val"><span class="neg-txt">$0/20$（$0\%$）</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-card">
+        <h4><code>v2</code> 提示词诱发的典型高频打转指令实测统计 <span class="tag neg">SW 共 $645$ 步</span></h4>
+        <div class="hbar-list" style="margin-top:12px;">
+          <div class="hbar-row" style="grid-template-columns:205px minmax(0,1fr) 68px;">
+            <div><code>open door to greenhouse</code></div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:100%;background:var(--neg);"></div></div>
+            <div class="hbar-val">$121\times$</div>
+          </div>
+          <div class="hbar-row" style="grid-template-columns:205px minmax(0,1fr) 68px;">
+            <div><code>open door to hive/fridge/closet</code></div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:79.3%;background:var(--neg);"></div></div>
+            <div class="hbar-val">$96\times$</div>
+          </div>
+          <div class="hbar-row" style="grid-template-columns:205px minmax(0,1fr) 68px;">
+            <div><code>open door to hallway</code></div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:26.4%;background:var(--warn);"></div></div>
+            <div class="hbar-val">$32\times$</div>
+          </div>
+          <div class="hbar-row" style="grid-template-columns:205px minmax(0,1fr) 68px;">
+            <div><code>pick up wood cup (containing...)</code></div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:25.6%;background:var(--violet);"></div></div>
+            <div class="hbar-val">$31\times$</div>
+          </div>
+          <div class="hbar-row" style="grid-template-columns:205px minmax(0,1fr) 68px;">
+            <div><code>look at wood cup (containing...)</code></div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:24.0%;background:var(--violet);"></div></div>
+            <div class="hbar-val">$29\times$</div>
+          </div>
+          <div class="hbar-row" style="grid-template-columns:205px minmax(0,1fr) 68px;">
+            <div><code>focus on pea plant in the...</code></div>
+            <div class="hbar-track"><div class="hbar-fill" style="width:23.1%;background:var(--violet);"></div></div>
+            <div class="hbar-val">$28\times$</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="booktabs">
+        <thead>
+          <tr>
+            <th>有区分度的两类任务（剔除打转步后）</th>
+            <th class="ctr">轨迹分组</th>
+            <th class="num">平均总步数</th>
+            <th class="num">平均打转步数</th>
+            <th class="num">去打转合法率</th>
+            <th class="num">开局 $t=0$ $I_{\mathrm{empty}}$</th>
+            <th class="num">全局去打转 $I_{\mathrm{neu}}$</th>
+            <th class="num">去打转 $\bar{H}^C$</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="em">
+            <td><strong>SW <code>find-living-thing</code></strong></td>
+            <td class="ctr"><span class="pos-txt">成功局（$8$ 局）</span></td>
+            <td class="num">$19.13 \pm 2.89$</td>
+            <td class="num">$1.38 \pm 2.18$</td>
+            <td class="num"><span class="pos-txt">$80.08\% \pm 6.59\%$</span></td>
+            <td class="num"><span class="pos-txt">$5.060 \pm 4.507$</span></td>
+            <td class="num">$1.031 \pm 0.626$</td>
+            <td class="num">$0.120 \pm 0.008$</td>
+          </tr>
+          <tr>
+            <td>SW <code>find-living-thing</code></td>
+            <td class="ctr">失败局（$12$ 局）</td>
+            <td class="num">$32.75 \pm 5.23$</td>
+            <td class="num"><span class="neg-txt">$10.25 \pm 9.52$</span></td>
+            <td class="num">$68.75\% \pm 8.04\%$</td>
+            <td class="num">$3.576 \pm 2.730$</td>
+            <td class="num">$1.382 \pm 0.831$</td>
+            <td class="num">$0.149 \pm 0.034$</td>
+          </tr>
+          <tr class="sep em">
+            <td><strong>TWX <code>coin</code></strong></td>
+            <td class="ctr"><span class="pos-txt">成功局（$10$ 局）</span></td>
+            <td class="num">$13.50 \pm 12.64$</td>
+            <td class="num">$1.10 \pm 1.81$</td>
+            <td class="num"><span class="pos-txt">$69.94\% \pm 31.47\%$</span></td>
+            <td class="num">$2.370 \pm 2.245$</td>
+            <td class="num">$0.996 \pm 0.999$</td>
+            <td class="num">$0.148 \pm 0.044$</td>
+          </tr>
+          <tr>
+            <td>TWX <code>coin</code></td>
+            <td class="ctr">失败局（$10$ 局）</td>
+            <td class="num">$35.00 \pm 0.00$</td>
+            <td class="num"><span class="neg-txt">$4.70 \pm 7.82$</span></td>
+            <td class="num">$59.23\% \pm 25.60\%$</td>
+            <td class="num">$2.409 \pm 0.921$</td>
+            <td class="num">$1.810 \pm 1.012$</td>
+            <td class="num">$0.165 \pm 0.062$</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">表 $2.4$　剥离 $4$ 个零方差任务并剔除打转步后，SW <code>find-living-thing</code> 成功局在开局规划步（$t=0$）的 $I_{\mathrm{empty}}$ 达 $5.060$（高于失败局的 $3.576$）；且在上一步报错后的非打转恢复步中，成功改出合法动作（$n=70$）的 $I_{\mathrm{neu}}$ 均值为 $1.370$，高于换动作仍报错步（$n=32$）的 $0.938$。</p>
+  </div>
+
+  <!-- ==================== DIAGNOSIS 5 ==================== -->
+  <div class="prose">
+    <h2 class="sec"><span class="n">$2.5$</span>问题五：短窗口 $\hat{A}_t$ 误伤成功轨迹铺垫步，且 Pass 4 单行历史触发上下文格式突变</h2>
+    <p>最后两项反常现象——“约 $80\%$ 的步落在 $C_t = \hat{A}_t I_t &lt; 0$ 象限”与“$98\%$ 的步 $D_{\mathrm{self}} &lt; 0$”——完全源于两个代理指标本身的构造偏置：</p>
+    <h3 class="sub">（$1$）为什么成功通关局里也有高达 $61.5\%$ 的步被判为负优势 $\hat{A}_t &lt; 0$？</h3>
+    <p><code>02_score_offline.py</code> 将优势代理定义为含当前步的 $3$ 步窗口累积奖励在任务内的标准化值：$\hat{A}_t = (\tilde{G}_t^{(3)} - \mu_{\mathrm{task}}) / (\sigma_{\mathrm{task}} + 10^{-6})$，其中 $\tilde{G}_t^{(3)} = r_t + r_{t+1} + r_{t+2}$。在稀疏奖励环境中，单步 $r_t = 0$ 占比达 $92.00\%$（SW）与 $94.84\%$（TWX），即使看 $3$ 步窗口，<strong>$\tilde{G}_t^{(3)} = 0$ 的步仍占 $82.33\%$（SW）与 $86.62\%$（TWX）</strong>（在 TWX <code>coin</code> 中高达 $95.5\%$）。只要任务内有少数拿分步使任务均值 $\mu_{\mathrm{task}} &gt; 0$，<strong>所有距离终点超过 $3$ 步的必要开门、寻路、排查动作就会被自动扣上负优势 $\hat{A}_t &lt; 0$</strong>。</p>
+    <p>实测即便<strong>只看最终成功通关的轨迹（<code>terminal_success == True</code>）</strong>，SW 成功局的 $153$ 步中仍有 <strong>$39.22\%$（$60$ 步）</strong> 被判为 $\hat{A}_t &lt; 0$；TWX 成功局的 $332$ 步中更有 <strong>$61.45\%$（$204$ 步）</strong> 被判为 $\hat{A}_t &lt; 0$！与超过 $92\%$ 的正值 $I_t &gt; 0$ 相乘后，便机械地把 <strong>$79.94\%$（SW）与 $82.11\%$（TWX）</strong> 的步推进了 $(\hat{A}_t &lt; 0, I_t &gt; 0)$ 象限。</p>
+
+    <h3 class="sub">（$2$）为什么 Pass 4 的 $D_{\mathrm{self}}$ 在 $t=0$ 严格为 $0$，一到 $t \ge 1$ 就 $99.84\%\text{–}100\%$ 为负？</h3>
+    <p>查看 <code>src/prompts.py</code> 第 $197\text{–}215$ 行的 <code>build_state_opd_messages</code> 可知，Pass 4 在构造 Teacher 输入 $s_t$ 时，不仅删去了历史思考的内容，还<strong>直接删掉了历史助手回复中的 <code>Thought:</code> 这一整行标签</strong>，把前 $t$ 轮全部改成了单行 <code>Assistant: Action: ...</code>。这给模型注入了强烈的上下文少样本格式示范：“本对话里的助手从不写思考、只输出单行动作”；随后在当前第 $t$ 步突然强插 <code>Assistant: Thought:</code> 并对学生生成的 $30$ 个自由叙述 token 算对数似然，Teacher 自然倾向于立刻收束换行去写 <code>Action:</code>，系统性压低长思考句中词汇的概率。</p>
+    <p>表 $2.3$ 与图 $2.2$ 给出了最直接的证据：在尚无历史助手回复的 <strong>$t = 0$ 轮</strong>，SW 与 TWX 的 $D_{\mathrm{self}}$ 均值分别为 <strong>$+0.0001$</strong> 与 <strong>$+0.0012$</strong>（负值率 $55.0\%$ 与 $51.7\%$，纯属 BF16 舍入涨落）；一旦进入 <strong>$t \ge 1$ 轮</strong>，SW 的 $1{,}864$ 步中有 <strong>$1{,}861$ 步为负（$99.84\%$，均值 $-1.1604$）</strong>，TWX 的 $1{,}315$ 步更是 <strong>$1{,}315$ 步全部为负（$100.00\%$，均值 $-1.6240$）</strong>。</p>
+  </div>
+
+  <div class="wide-block">
+    <div class="table-wrap">
+      <table class="booktabs">
+        <thead>
+          <tr>
+            <th>基准环境</th>
+            <th class="num">单步 $r_t = 0$ 占比</th>
+            <th class="num">$3$ 步窗口 $\tilde{G}_t^{(3)} = 0$ 占比</th>
+            <th class="num"><strong>成功通关局内</strong>被判 $\hat{A}_t &lt; 0$ 占比</th>
+            <th class="num">有效铺垫步被判 $\hat{A}_t &lt; 0$ 占比</th>
+            <th class="num">全局落入 $(\hat{A}_t &lt; 0, I_t &gt; 0)$ 占比</th>
+            <th class="num">$t \ge 1$ 时 $D_{\mathrm{self}} &lt; 0$ 占比</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>ScienceWorld</strong>（$1{,}924$ 步）</td>
+            <td class="num">$92.00\%$</td>
+            <td class="num">$82.33\%$</td>
+            <td class="num"><span class="neg-txt">$39.22\%$（$60 / 153$）</span></td>
+            <td class="num">$38.9\%$</td>
+            <td class="num">$79.94\%$</td>
+            <td class="num"><span class="neg-txt">$99.84\%$（$1{,}861 / 1{,}864$）</span></td>
+          </tr>
+          <tr>
+            <td><strong>TextWorldExpress</strong>（$1{,}375$ 步）</td>
+            <td class="num">$94.84\%$</td>
+            <td class="num">$86.62\%$</td>
+            <td class="num"><span class="neg-txt">$61.45\%$（$204 / 332$）</span></td>
+            <td class="num">$57.0\%$</td>
+            <td class="num">$82.11\%$</td>
+            <td class="num"><span class="neg-txt">$100.00\%$（$1{,}315 / 1{,}315$）</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">表 $2.5$　优势代理 $\hat{A}_t$ 的短窗口负偏与 Pass 4 的上下文格式突变实测统计汇总。</p>
+  </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- TAB 3: 交互式流程对比演示器                                               -->
+<!-- ======================================================================= -->
+<section id="walkthrough" class="tab-panel">
+  <div class="prose">
+    <h2 class="sec"><span class="n">$3.0$</span>交互式流程对比演示器（基于真实采集样本逐行解剖）</h2>
+    <p>为了直观对比不同实验协议到底往模型里喂了什么文本、锁没锁动作、用的是 <code>vLLM</code> 还是 <code>HF Transformers</code>，下面从全量数据中抽取了 $3$ 个典型真实交互步。点击切换<strong>实验模式</strong>与<strong>真实样本</strong>，右侧将实时高亮实际送入模型的完整上下文与产出指标。</p>
+  </div>
+
+  <div class="wide-block">
+    <div class="wt-controls">
+      <div class="wt-row">
+        <span class="wt-lbl">选择真实样本：</span>
+        <div class="seg" id="wt-sample-seg">
+          <button class="seg-btn active" data-sample="sw_s14">样本 $1$ · SW <code>find-living-thing</code>（<code>s14</code>, $k=3$ 多门分岔步）</button>
+          <button class="seg-btn" data-sample="tw_s1014">样本 $2$ · TWX <code>coin</code>（<code>s1014</code>, $k=3$ 跨步计划延续 + 成功铺垫被判负优势）</button>
+          <button class="seg-btn" data-sample="sw_s6">样本 $3$ · SW <code>find-living-thing</code>（<code>s6</code>, $k=6$ 动作复述旁白制造高 $I_t$ 非法打转）</button>
+        </div>
+      </div>
+      <div class="wt-row">
+        <span class="wt-lbl">切换实验协议：</span>
+        <div class="seg" id="wt-mode-seg">
+          <button class="seg-btn active" data-mode="offline_4pass">① 你上次跑的离线 Pass 1–4（HF）</button>
+          <button class="seg-btn" data-mode="online_nocot">② $120$ 题整局无 CoT Rollout（vLLM）</button>
+          <button class="seg-btn" data-mode="redecode_keep">③ 第 $k$ 步单步重解码 · 保留前 $k-1$ 步 CoT</button>
+          <button class="seg-btn" data-mode="redecode_mask">④ 第 $k$ 步单步重解码 · 遮蔽前 $k-1$ 步 CoT</button>
+        </div>
+      </div>
+      <div class="wt-row" id="wt-subpass-row">
+        <span class="wt-lbl">离线子通道：</span>
+        <div class="seg" id="wt-pass-seg">
+          <button class="seg-btn active" data-pass="p12">对比 Pass 1（含当前 CoT）vs. Pass 2（空 CoT）$\to$ 算 $I_k$</button>
+          <button class="seg-btn" data-pass="p3">对比 Pass 3（中性句 CoT）$\to$ 算 $I_k^{\mathrm{neu}}$</button>
+          <button class="seg-btn" data-pass="p4_bug">原版 Pass 4（单行历史，触发格式突变）$\to$ 算 $D_{\mathrm{self}}$</button>
+          <button class="seg-btn" data-pass="p4_fix">修复版 Pass 4（两行中性历史，格式对齐）</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="wt-status-grid" id="wt-status-bar"></div>
+
+    <div class="wt-main">
+      <div class="wt-pane">
+        <div class="wt-pane-head">
+          <span id="wt-prompt-title">实际送入模型的 Prompt 上下文与第 $k$ 步目标序列</span>
+          <span class="tag acc" id="wt-engine-pill">HF Transformers</span>
+        </div>
+        <div class="wt-pane-body" id="wt-prompt-box"></div>
+      </div>
+
+      <div class="wt-pane">
+        <div class="wt-pane-head">
+          <span>该协议输出什么指标？能/不能回答什么问题？</span>
+          <span class="tag" id="wt-paradigm-pill">范式 C</span>
+        </div>
+        <div class="wt-pane-body" id="wt-metric-box"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================================= -->
+<!-- TAB 4: 1× A800 具体重跑修改方案                                           -->
+<!-- ======================================================================= -->
+<section id="redesign" class="tab-panel">
+  <div class="prose">
+    <h2 class="sec"><span class="n">$4.0$</span>面向 $1\times$ A800 服务器的四阶段重跑改造清单</h2>
+    <p>结合服务器实测速度（<code>ssh a800</code>，<code>/root/cot_action_diag</code>，本地预置权重 <code>/model/ModelScope/Qwen/Qwen3-8B</code>，无需重装环境），整套修复与新增对照实验在单张 A800-80GB 上<strong>总 GPU 耗时约 $75\text{–}95$ 分钟（不到 $1.6$ 小时）</strong>即可全部跑完。建议严格按以下四个阶段推进，避免在退化任务和打转提示词上空耗算力。</p>
+  </div>
+
+  <!-- Stage Budget Summary Table -->
+  <div class="wide-block">
+    <div class="table-wrap">
+      <table class="booktabs">
+        <thead>
+          <tr>
+            <th>改造阶段</th>
+            <th>修改文件 / 新增脚本</th>
+            <th>解决的原实验问题</th>
+            <th>运行引擎</th>
+            <th>过关验收判据</th>
+            <th class="num">$1\times$ A800 预计耗时</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>阶段一 · 修复提示词与思考模式</strong></td>
+            <td><code>src/prompts.py</code><br/><code>configs/protocol_a800.yaml</code></td>
+            <td>问题三（$29.7$ token 动作复述）<br/>问题四（$33.5\%$ 原地打转）</td>
+            <td><code>vLLM</code>（E01 试水）</td>
+            <td><code>action_valid &gt;= 65%</code>，原地打转率 $&lt; 8\%$，解析率 $\ge 98\%$</td>
+            <td class="num">$8\text{ min}$</td>
+          </tr>
+          <tr>
+            <td><strong>阶段二 · 校准 $6$ 类任务难度区间</strong></td>
+            <td><code>configs/protocol_a800.yaml</code></td>
+            <td>问题四（$4/6$ 任务成败零方差）</td>
+            <td><code>vLLM</code>（E01 扩展试水）</td>
+            <td>每类任务通关率落在 $20\%\text{–}75\%$ 之间，消除 $0/20$ 与 $20/20$</td>
+            <td class="num">$10\text{ min}$</td>
+          </tr>
+          <tr class="em">
+            <td><strong>阶段三 · 在线对照 + 第 $k$ 步单步重解码</strong></td>
+            <td><code>scripts/01_run_rollout.py</code><br/>新增 <code>scripts/02b_redecode_turn_k.py</code></td>
+            <td>问题一（缺在线对照与重采样）<br/>问题二（分离当步与累积效应）</td>
+            <td><code>vLLM</code>（$60$ 并发 + 静态批）</td>
+            <td>拿到三组 $120$ 题在线胜率差 + 全量步 $\text{B}_{\mathrm{keep}} / \text{B}_{\mathrm{mask}}$ 动作改变率与合法率差</td>
+            <td class="num">$28\text{–}35\text{ min}$</td>
+          </tr>
+          <tr>
+            <td><strong>阶段四 · 对齐 Pass 4 格式与升级优势估计</strong></td>
+            <td><code>src/prompts.py:197</code><br/><code>src/tokenization.py</code> &amp; <code>02_score_offline.py</code></td>
+            <td>问题一（天花板截断）<br/>问题五（$\hat{A}_t$ 误伤与 $D_{\mathrm{self}}$ 恒负）</td>
+            <td><code>HF Transformers</code> + <code>vLLM</code>（同种子 $G=4$）</td>
+            <td>$t \ge 1$ 时 $D_{\mathrm{self}}$ 负值率回归合理区间（非 $100\%$ 恒负）；成功铺垫步 $\hat{A}_t^{\mathrm{GRPO}} &gt; 0$</td>
+            <td class="num">$30\text{–}42\text{ min}$</td>
+          </tr>
+          <tr class="sep">
+            <td colspan="5"><strong>四阶段端到端总计 GPU 预算（单张 NVIDIA A800-SXM4-80GB）</strong></td>
+            <td class="num"><strong>$76\text{–}95\text{ min}$</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">表 $4.1$　基于 <code>full_log.txt</code> 实测吞吐率（SW $60$ 局 $3.9\text{ min}$、TWX $60$ 局 $1.0\text{ min}$、HF 四趟打分 $23.2\text{ min}$）折算的分阶段改造耗时清单。</p>
+  </div>
+
+  <!-- Stage 1 -->
+  <div class="wide-block">
+    <div class="stage-card">
+      <div class="stage-head">
+        <div>
+          <span class="fig-kicker">STAGE $1$ · 零算力改代码 + $8$ 分钟 E01 试水验收</span>
+          <h3 class="stage-title">阶段一：修正 <code>src/prompts.py</code> 两处诱发重复报错的措辞，放开思考长度与报错检查</h3>
+        </div>
+        <span class="tag pos">预计消除 $&gt;80\%$ 原地打转步</span>
+      </div>
+      <p>首先解决导致 SW 动作合法率跌至 $42.5\%$、化学混色打转率达 $53.2\%$ 的提示词缺陷，并解除 <code>in 1-3 sentences</code> 对推理链的压缩：</p>
+      <div class="diff-grid">
+        <div class="diff-box">
+          <div class="diff-hdr old">修改前（<code>src/prompts.py</code> 第 $12, 25, 27\text{–}28, 38$ 行）</div>
+          <pre><code>Thought: &lt;concise reasoning in 1-3 sentences about the current state and next step&gt;
+...
+Available commands (use exactly these forms; OBJ and LOC must be names exactly as they appear in observations):
+- go to LOC: ... the door to it must be open (use "open door to LOC" first)
+- open OBJ | close OBJ: doors ("open door to LOC") and openable objects...
+Note: ... use the full name shown in the observation</code></pre>
+        </div>
+        <div class="diff-box">
+          <div class="diff-hdr new">修改后（区分门与容器、剥离括号状态后缀、禁止原样复读报错指令）</div>
+          <pre><code>Thought: &lt;briefly check: (1) current room exits &amp; objects; (2) if last action failed, why it failed and what different command to try; (3) next valid command without quoting it verbatim&gt;
+...
+- go to LOC: ONLY works for rooms explicitly listed as exits in "look around". If a room is not adjacent, go through a connecting room (e.g. hallway/outside) first.
+- open door to LOC: ONLY for room doors explicitly listed in the current room. NEVER use "open door to" on containers/appliances (use "open fridge", "open bee hive", "open cupboard").
+- Naming OBJ: Use the base object name WITHOUT parenthetical state suffixes — e.g., write "pick up wood cup" or "pick up blue paint", NEVER "pick up wood cup (containing blue paint)".
+- Hard rule: If an action returns "No known action" or "Unknown action", NEVER repeat the exact same command string on the next turn; run "look around" or simplify the object name.</code></pre>
+        </div>
+      </div>
+      <p class="note" style="margin-bottom:0;"><strong>关于 <code>enable_thinking</code> 的选择建议：</strong> 若希望保留显式 <code>Thought:\nAction:</code> 两段结构以便直接复用现有 <code>locate_token_spans</code> 与 <code>02_score_offline.py</code>，保持 <code>enable_thinking: false</code> 但将 <code>max_tokens_per_turn</code> 调至 <code>384</code> 并使用上方三点式推理提示即可；若要测 Qwen3-8B 最强原生推理上限，可在阶段三额外交替跑一组 <code>enable_thinking: true</code>（<code>max_tokens_per_turn: 768</code>，从 <code>&lt;think&gt;...&lt;/think&gt;</code> 提取思维链 span）。</p>
+    </div>
+
+    <!-- Stage 2 -->
+    <div class="stage-card">
+      <div class="stage-head">
+        <div>
+          <span class="fig-kicker">STAGE $2$ · 校准 <code>configs/protocol_a800.yaml</code> · 预计耗时 $10$ 分钟</span>
+          <h3 class="stage-title">阶段二：消除 $0/20$ 全败与 $20/20$ 饱和，让全部 $6$ 类任务落在 $20\%\text{–}75\%$ 有效区分区</h3>
+        </div>
+        <span class="tag acc">恢复局级成败统计功效</span>
+      </div>
+      <ul class="plain">
+        <li><strong>打破 TWX <code>mapreader</code> 的 $20/20$ 饱和：</strong> 当前 <code>numLocations=11,includeDoors=1</code> 的最优路径仅 $7\text{–}13$ 步，模型无需复杂推理即可满分。建议改为 <code>game_params: "numLocations=15,maxDistanceApart=6,includeDoors=1,distractorItems=4"</code>（并将步数上限同步设为 $40$），先跑 $5$ 局 smoke 确认通关率回落至 $40\%\text{–}75\%$。</li>
+        <li><strong>打破 TWX <code>cookingworld</code> 的 $0/20$ 全败：</strong> 当前 $5$ 个房间 $+ 3$ 种食材（需找刀、切菜、按食谱分别烹饪再装盘）在零样本 $35$ 步内超出基础探索半径。建议调为 <code>game_params: "numLocations=3,numIngredients=2,includeDoors=1"</code>（黄金步数约 $14\text{–}20$ 步），使基础模型有合理概率完成完整做菜链条。</li>
+        <li><strong>校准 SW <code>chemistry-mix-paint-secondary-color</code> 与 <code>test-conductivity</code>：</strong> 这两类任务此前 $0/20$ 的头号原因是括号容器名打转（<code>wood cup (containing blue paint)</code> 占去一半步数）与跨房间找路耗尽 $35$ 步。完成阶段一提示词修复后先跑 $5$ 局 smoke；若通关率仍低于 $15\%$，可在 <code>scienceworld</code> 配置下开启环境内置轻度简化 <code>simplification_str: "openDoors"</code>，或将 L2 替换为黄金步数 $12\text{–}18$ 步的 <code>boil</code> / <code>measure-melting-point-known-substance</code>。</li>
+      </ul>
+    </div>
+
+    <!-- Stage 3 -->
+    <div class="stage-card">
+      <div class="stage-head">
+        <div>
+          <span class="fig-kicker">STAGE $3$ · 核心因果实验（vLLM）· 预计耗时 $28\text{–}35$ 分钟</span>
+          <h3 class="stage-title">阶段三：跑齐 $120$ 题在线有/无 CoT 对照（范式 A）+ 第 $k$ 步单步重解码（范式 B1）</h3>
+        </div>
+        <span class="tag vio">直接回答“到底有没有用”与“第 $k$ 步切入重采”</span>
+      </div>
+      <h4 class="mini">3A · 在 <code>01_run_rollout.py</code> 增加 <code>--prompt-mode {react_cot, action_only, neutral_cot}</code>（约 $20\text{–}25$ 分钟）</h4>
+      <p>固定完全相同的 $120$ 个种子，在修复后的任务配置上跑三组在线轨迹：</p>
+      <ul class="plain">
+        <li><code>--prompt-mode action_only</code>：系统提示词只要求每步输出单行 <code>Action: &lt;command&gt;</code>（<code>max_tokens_per_turn: 32</code>，SW+TWX 合计约 $4\text{–}5$ 分钟）；</li>
+        <li><code>--prompt-mode neutral_cot</code>：强制每步固定前缀 <code>Thought: I will choose the next action based on the current observation.\nAction:</code> 后由 <code>vLLM</code> 续写动作（排除两行模板长度差异，合计约 $5\text{–}6$ 分钟）；</li>
+        <li><code>--prompt-mode react_cot</code>：阶段一修复后的完整显式推理模式（合计约 $8\text{–}14$ 分钟）。直接汇报三组的<strong>终局通关率、平均归一化得分、去打转合法率与平均通关步数</strong>。</li>
+      </ul>
+
+      <h4 class="mini">3B · 新增 <code>scripts/02b_redecode_turn_k.py</code>：第 $k$ 步单步重解码（全量约 $3{,}000$ 步仅需 $5\text{–}8$ 分钟）</h4>
+      <p>直接读取 <code>react_cot</code> 组落盘的 <code>turns.jsonl</code>，无需重跑整局，对每个第 $k$ 步构造两种反事实前缀批量喂给 <code>vLLM</code>（设 <code>n=4, max_tokens=20</code> 每步独立重采 $4$ 个新动作 $a_k^{(1..4)}$）：</p>
+      <pre><code># 口径 B_keep（测当步边际效应）：保留 history[0..k-1] 原文，第 k 步末尾拼 "Thought:\nAction:" 让 vLLM 采样新动作 a_k'
+# 口径 B_mask（测累积 CoT 效应）：将 history[0..k-1] 中所有 assistant 回复改为两行中性句，第 k 步同样采样新动作 a_k''
+# 直接输出三项硬指标（零 Teacher-Forcing 天花板偏置）：
+#   1. 动作改变率：1 - P(a_k' == a_k)，按轮次深度 k 与状态不确定度分层；
+#   2. 报错自救提升：在上一步 action_valid == False 的受阻步上，比较原动作合法率 v(a_k) 与重采样动作合法率 E[v(a_k')]；
+#   3. 环境单步进度差（可选重放前 k-1 步确定性动作重置环境后 step 一次）：E[score_norm(a_k) - score_norm(a_k')]。</code></pre>
+    </div>
+
+    <!-- Stage 4 -->
+    <div class="stage-card">
+      <div class="stage-head">
+        <div>
+          <span class="fig-kicker">STAGE $4$ · 离线打分修正与 RL 训练接口对齐 · 预计耗时 $30\text{–}42$ 分钟</span>
+          <h3 class="stage-title">阶段四：修复 Pass 4 两行中性历史格式，升级同种子组内优势与相对惊讶度指标</h3>
+        </div>
+        <span class="tag acc">平稳衔接后续 C3A / GRPO 强化学习训练</span>
+      </div>
+      <ol class="findings">
+        <li><strong>修复 Pass 4 格式突变（改 <code>src/prompts.py</code> 第 $209\text{–}212$ 行，仅改 $3$ 行代码）：</strong> 将 <code>build_state_opd_messages</code> 中的单行 <code>f"Action: {parsed.action}"</code> 替换为保持两行结构的格式对齐版本：
+          <pre><code>NEUTRAL_THOUGHT = "I will choose the next action based on the current observation."
+pruned.append({"role": "assistant", "content": f"Thought: {NEUTRAL_THOUGHT}\nAction: {parsed.action}"})</code></pre>
+          这样既完整剥离了前 $t-1$ 步具体思考内容的跨步干扰，又维持了每轮助手均输出 <code>Thought:\nAction:</code> 的上下文格式先验，直接消除 $t \ge 1$ 时 $99.84\%\text{–}100\%$ 恒负的人为偏移。</li>
+        <li><strong>在 <code>02_score_offline.py</code> 中新增全历史中性化基线 Pass 3b 与相对惊讶度消减率 $R_{\mathrm{surp}, t}$：</strong> 额外用上述 <code>pruned</code> 两行中性历史计算无历史思考动作似然 $\log\pi(a_t \mid h_t^{\mathrm{neu}}, z_{\mathrm{neu}})$，测出整条思维链的累积似然增益 $I_t^{\mathrm{cum}}$；同时在基础惊讶度 $-\frac{1}{|a_t|}\log\pi(a_t \mid h_t, z_{\mathrm{neu}}) &gt; 0.2$ 的非平凡决策步上计算相对惊讶度消减率：
+          $$R_{\mathrm{surp}, t} = \frac{-\log\pi(a_t \mid h_t, z_{\mathrm{neu}}) - \big(-\log\pi(a_t \mid h_t, z_t)\big)}{-\log\pi(a_t \mid h_t, z_{\mathrm{neu}}) + 10^{-6}}$$
+          从统计根源上剥离显见拿分步的天花板截断混杂。</li>
+        <li><strong>用同种子多轨迹组内长视野回报 $\hat{A}_t^{\mathrm{GRPO}}$ 替代跨局 $3$ 步短窗口 <code>G3_incl</code>：</strong> 对每个任务种子用 <code>vLLM</code> 采样 $G = 4$ 条轨迹（$120 \times 4 = 480$ 局在 A800 上仅需约 $18\text{–}22$ 分钟），计算长视野折现回报 $G_t = \sum_{j=0}^{T-t} \gamma^j r_{t+j}$（取 $\gamma = 0.97$）并在同一任务种子的 $G$ 条轨迹内做标准化。成功通关局中的早期寻路与开门铺垫步将自然获得 $\hat{A}_t^{\mathrm{GRPO}} &gt; 0$，不再出现 $39\%\text{–}61\%$ 成功步被判负优势的现象。</li>
+        <li><strong>强化学习训练时的 CoT 信用分配组合形式：</strong> 遵循非负门控加性结构，绝不用带负号的 $C_t$ 直接去乘有符号的 $D_{t,i}$，并对自蒸馏正则项采用严格非负的逐 token Bregman / Schulman $k_3$ 散度 $d_{k_3}(r_{t,i}) = r_{t,i} - 1 - \log r_{t,i} \ge 0$（其中 $r_{t,i} = \pi_T(z_{t,i}\mid s_t^{\mathrm{matched}}, z_{t,&lt;i}) / \pi_\theta(z_{t,i}\mid h_t, z_{t,&lt;i})$ 在对数域截断计算）：
+          $$A^C_{t,i} = \alpha \cdot g\big(I_t^{\mathrm{neu}}\big) \cdot \hat{A}_t^{\mathrm{GRPO}} - \beta \cdot d_{k_3}(r_{t,i}), \qquad g(I) = \mathrm{clip}\!\left(\frac{\max(I, 0)}{\tau_I},\, 0,\, 1\right) \in [0, 1]$$</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">
+  <div>诊断与重设计报告 · 针对 <code>cot_action_diag</code>（Qwen3-8B，ScienceWorld &amp; TextWorldExpress，$3{,}299$ 步实测数据）</div>
+  <div id="katex-selfcheck-badge">公式自检加载中…</div>
+</footer>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  const KATEX_OPTS = {
+    delimiters: [
+      { left: "$$", right: "$$", display: true },
+      { left: "$", right: "$", display: false },
+      { left: "\\(", right: "\\)", display: false },
+      { left: "\\[", right: "\\]", display: true }
+    ],
+    ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code", "option"],
+    throwOnError: true
+  };
+
+  function typeset(el) {
+    if (typeof renderMathInElement === "function" && el) {
+      renderMathInElement(el, KATEX_OPTS);
+    }
+  }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // ---------------- Tab Navigation ----------------
+  const TAB_IDS = ["concepts", "diagnosis", "walkthrough", "redesign"];
+  function showTab(id) {
+    if (!TAB_IDS.includes(id)) return;
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.tab === id);
+    });
+    document.querySelectorAll(".tab-panel").forEach(panel => {
+      panel.classList.toggle("active", panel.id === id);
+    });
+    if (history.replaceState) {
+      history.replaceState(null, "", "#" + id);
+    }
+  }
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => showTab(btn.dataset.tab));
+  });
+
+  // =========================================================================
+  // CHART 2.1: I_t vs No-CoT Surprisal Identity & Reward Ceiling
+  // Real quantile-stratified points extracted from turn_metrics.jsonl
+  // =========================================================================
+  const IDENTITY_DATA = {
+    sw: {
+      name: "ScienceWorld",
+      n: "1{,}924",
+      r: "0.9998",
+      r2: "0.9996",
+      maxVal: 10.0,
+      rewMed: "0.0000",
+      rewMean: "0.3554",
+      zeroMean: "0.8827",
+      // [surprisal, I_empty_norm, is_pos_reward, note]
+      pts: [
+        [0.000, 0.000, 1, "拿分收尾步（如 <code>go</code> / <code>focus</code> 目标在眼前）：无 CoT 惊讶度 $= 0.000$，$I_t = 0.000$"],
+        [0.025, 0.025, 1, "拿分步：惊讶度 $= 0.025$，$I_t = 0.025$"],
+        [0.120, 0.119, 1, "少数带轻微分支的拿分步：惊讶度 $= 0.120$，$I_t = 0.119$"],
+        [0.355, 0.351, 1, "SW 拿分步均值位置：惊讶度 $= 0.355$（中位数 $0.0000$）"],
+        [0.004, 0.004, 0, "确定性过渡步（如开门后 <code>go to hallway</code>）：惊讶度 $= 0.004$，$I_t = 0.004$"],
+        [0.185, 0.181, 0, "低歧义探索步：惊讶度 $= 0.185$，$I_t = 0.181$"],
+        [0.490, 0.486, 0, "多出口选择步：惊讶度 $= 0.490$，$I_t = 0.486$"],
+        [0.883, 0.874, 0, "SW 零奖励步均值位置：惊讶度 $= 0.883$，$I_t = 0.874$"],
+        [1.580, 1.572, 0, "走廊多门分岔步：惊讶度 $= 1.580$，$I_t = 1.572$"],
+        [2.276, 2.275, 0, "开局规划步：惊讶度 $= 2.276$，$I_t = 2.275$"],
+        [3.008, 3.007, 0, "受阻换策略步：惊讶度 $= 3.008$，$I_t = 3.007$"],
+        [3.500, 3.500, 0, "<code>s6</code> 第 $6$ 步复述非法动作：惊讶度 $= 3.500$，$I_t = 3.500$"],
+        [4.150, 4.150, 0, "<code>s3</code> 第 $0$ 步多候选检查：惊讶度 $= 4.083$，$I_t = 4.083$"],
+        [5.320, 5.312, 0, "高不确定探索步：惊讶度 $= 5.320$，$I_t = 5.312$"],
+        [6.334, 6.334, 0, "$\\mathrm{P95}$ 分位点：惊讶度 $= 6.334$，$I_t = 6.334$"],
+        [8.247, 8.247, 0, "<code>s17</code> 第 $2$ 步转向开门：惊讶度 $= 8.375$，$I_t = 8.247$"],
+        [9.450, 9.441, 0, "高惊讶度长尾步：惊讶度 $= 9.450$，$I_t = 9.441$"]
+      ]
+    },
+    tw: {
+      name: "TextWorldExpress",
+      n: "1{,}375",
+      r: "0.9995",
+      r2: "0.9991",
+      maxVal: 10.0,
+      rewMed: "0.0000",
+      rewMean: "0.0568",
+      zeroMean: "1.3757",
+      pts: [
+        [0.000, 0.000, 1, "拿分收尾步（<code>take coin</code> / <code>put map</code>，占拿分步 $93\\%$）：惊讶度 $= 0.000$，$I_t = 0.000$"],
+        [0.012, 0.012, 1, "拿分步：惊讶度 $= 0.012$，$I_t = 0.012$"],
+        [0.057, 0.055, 1, "TWX 拿分步均值位置：惊讶度仅 $0.0568$（中位数 $0.0000$）"],
+        [0.002, 0.002, 0, "<code>mapreader</code> 常规移动步：惊讶度 $= 0.002$，$I_t = 0.002$"],
+        [0.240, 0.238, 0, "低歧义移动步：惊讶度 $= 0.240$，$I_t = 0.238$"],
+        [0.680, 0.675, 0, "方向选择步：惊讶度 $= 0.680$，$I_t = 0.675$"],
+        [1.091, 1.091, 0, "<code>s1014</code> 第 $2$ 步进入储藏室：惊讶度 $= 1.091$，$I_t = 1.091$"],
+        [1.376, 1.357, 0, "TWX 零奖励步均值位置（拿分步的 $24.2\\times$）：惊讶度 $= 1.376$，$I_t = 1.357$"],
+        [2.479, 2.479, 0, "<code>s1014</code> 第 $0$ 步开局选门：惊讶度 $= 2.542$，$I_t = 2.479$"],
+        [2.971, 2.971, 0, "多容器检查步：惊讶度 $= 2.971$，$I_t = 2.971$"],
+        [3.625, 3.625, 0, "烹饪选食材步：惊讶度 $= 3.625$，$I_t = 3.625$"],
+        [4.677, 4.677, 0, "$\\mathrm{P90}$ 分位附近：惊讶度 $= 4.677$，$I_t = 4.677$"],
+        [5.819, 5.819, 0, "多方向回溯步：惊讶度 $= 5.819$，$I_t = 5.819$"],
+        [6.500, 6.500, 0, "<code>s1014</code> 第 $3$ 步空房折返厨房：惊讶度 $= 6.500$，$I_t = 6.500$"],
+        [7.638, 7.546, 0, "$\\mathrm{P95}$ 分位附近：惊讶度 $= 7.638$，$I_t = 7.546$"],
+        [9.220, 9.180, 0, "高惊讶度长尾步：惊讶度 $= 9.220$，$I_t = 9.180$"]
+      ]
+    }
+  };
+
+  let curIdentityBench = "sw";
+  function renderIdentityChart() {
+    const d = IDENTITY_DATA[curIdentityBench];
+    const box = document.getElementById("chart-identity-box");
+    const readout = document.getElementById("c1-readout");
+    const W = 640, H = 230, M = d.maxVal;
+
+    const ticks = [0, 2, 4, 6, 8, 10];
+    const gridLines = ticks.map(v => {
+      const y = H - (v / M) * H;
+      const x = (v / M) * W;
+      return `<line x1="0" y1="${y.toFixed(1)}" x2="${W}" y2="${y.toFixed(1)}" stroke="#efede6" stroke-width="1"/>` +
+             `<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${H}" stroke="#f5f3ed" stroke-width="1"/>`;
+    }).join("");
+
+    const circles = d.pts.map((p, idx) => {
+      const cx = (p[0] / M) * W;
+      const cy = H - (p[1] / M) * H;
+      const col = p[2] ? "#1e6b47" : "#1f4e79";
+      const r = p[2] ? 6.2 : 4.8;
+      return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r}" fill="${col}" fill-opacity="${p[2] ? 0.92 : 0.78}" stroke="#fff" stroke-width="1.2" style="cursor:pointer" data-pidx="${idx}"/>`;
+    }).join("");
+
+    const yTicksHtml = ticks.map(v => `<div class="y-tick" style="bottom:${(v / M) * 100}%">$${v}$</div>`).join("");
+    const xTicksHtml = ticks.map(v => `<div class="x-tick" style="left:${(v / M) * 100}%">$${v}$</div>`).join("");
+
+    box.innerHTML = `
+      <div class="y-axis-lbl">桥梁指标 $I_t$</div>
+      <div class="plot-box">
+        <svg class="plot-svg" viewBox="0 0 ${W} ${H}">
+          ${gridLines}
+          <line x1="0" y1="${H}" x2="${W}" y2="0" stroke="#8d897f" stroke-width="1.5" stroke-dasharray="5,4"/>
+          <rect x="0" y="${(H - 34).toFixed(1)}" width="42" height="34" fill="#1e6b47" fill-opacity="0.09" stroke="#1e6b47" stroke-opacity="0.35" stroke-dasharray="3,2" rx="3"/>
+          ${circles}
+        </svg>
+        ${yTicksHtml}
+        ${xTicksHtml}
+        <div class="plot-callout" style="left:9%;bottom:12%;">
+          <strong>拿分步天花板区（$r_t &gt; 0$）：</strong>无 CoT 惊讶度中位数 $= ${d.rewMed}$，均值 $= ${d.rewMean}$
+        </div>
+        <div class="plot-callout" style="right:4%;top:10%;">
+          线性相关 $r = ${d.r}$（$R^2 = ${d.r2}$）
+        </div>
+      </div>`;
+
+    readout.innerHTML = `<span><strong>${d.name}（$n=${d.n}$）：</strong>$r_t = 0$ 探索步惊讶度均值 $${d.zeroMean}$ vs. $r_t &gt; 0$ 拿分步均值 $${d.rewMean}$（中位数 $${d.rewMed}$）。悬停散点可查看单点实测值。</span>`;
+    typeset(box);
+    typeset(readout);
+
+    box.querySelectorAll("circle[data-pidx]").forEach(c => {
+      c.addEventListener("mouseenter", () => {
+        const p = d.pts[Number(c.dataset.pidx)];
+        readout.innerHTML = `<span><strong>当前悬停样本点：</strong>${p[3]}</span><span class="tag ${p[2] ? "pos" : "acc"}">${p[2] ? "$r_t > 0$ 拿分步" : "$r_t = 0$ 探索/过渡步"}</span>`;
+        typeset(readout);
+      });
+    });
+  }
+
+  document.querySelectorAll("#c1-bench-seg .seg-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#c1-bench-seg .seg-btn").forEach(b => b.classList.toggle("active", b === btn));
+      curIdentityBench = btn.dataset.bench;
+      renderIdentityChart();
+    });
+  });
+
+  // =========================================================================
+  // CHART 2.2: Turn Depth Cliff (I_t median, I_t mean, D_self mean)
+  // Exact empirical values from turn_metrics.jsonl across 7 turn-depth bins
+  // =========================================================================
+  const DEPTH_BINS = ["$t=0$", "$t=1$", "$t=2$", "$t=3\\text{–}4$", "$t=5\\text{–}9$", "$t=10\\text{–}19$", "$t=20\\text{–}34$"];
+  const DEPTH_DATA = {
+    I_med: {
+      yLabel: "$I_t$ 中位数（nats/tok）",
+      minY: 0, maxY: 3.0,
+      yTicks: [0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
+      sw: [2.0791, 0.0000, 0.0076, 0.0601, 0.0162, 0.0031, 0.0036],
+      tw: [2.7063, 0.0017, 0.0379, 0.0055, 0.0139, 0.0181, 0.0321],
+      annot: "<strong>$t=0 \\to t=1$ 阶跃下降：</strong>$t=0$ 无历史思考时中位数达 $2.08 / 2.71$；$t=1$ 引入 $1$ 条历史思考后立刻降至 $0.0000 / 0.0017$。",
+      calloutPos: "left:19%;top:14%;"
+    },
+    I_mean: {
+      yLabel: "$I_t$ 均值（nats/tok）",
+      minY: 0, maxY: 3.5,
+      yTicks: [0, 0.7, 1.4, 2.1, 2.8, 3.5],
+      sw: [3.127, 0.832, 1.160, 1.038, 0.893, 0.786, 0.618],
+      tw: [3.035, 1.571, 1.727, 1.337, 1.277, 1.119, 1.123],
+      annot: "<strong>$I_t$ 均值衰减：</strong>从 $t=0$ 的 $3.127$（SW）/ $3.035$（TWX）衰减至后期的 $0.618$ / $1.123$。",
+      calloutPos: "left:22%;top:12%;"
+    },
+    D_mean: {
+      yLabel: "$D_{\\mathrm{self}}$ 均值（nats/tok）",
+      minY: -2.0, maxY: 0.25,
+      yTicks: [-2.0, -1.5, -1.0, -0.5, 0.0],
+      sw: [0.0001, -0.6934, -0.7525, -0.9160, -1.0242, -1.1693, -1.3186],
+      tw: [0.0012, -0.7596, -1.0550, -1.2821, -1.6526, -1.7798, -1.7275],
+      annot: "<strong>Pass 4 格式突变直接证据：</strong>$t=0$ 无历史时均值严格为 $+0.0001 / +0.0012$；$t \\ge 1$ 出现单行 <code>Action:</code> 历史后 $99.84\\% / 100.00\\%$ 陡降为负。",
+      calloutPos: "left:18%;bottom:14%;"
+    }
+  };
+
+  let curDepthMetric = "I_med";
+  function renderDepthChart() {
+    const cfg = DEPTH_DATA[curDepthMetric];
+    const box = document.getElementById("chart-depth-box");
+    const readout = document.getElementById("c2-readout");
+    const W = 640, H = 230;
+    const span = cfg.maxY - cfg.minY;
+    const xAt = i => 36 + (i / (DEPTH_BINS.length - 1)) * (W - 72);
+    const yAt = v => H - ((v - cfg.minY) / span) * H;
+
+    const gridHtml = cfg.yTicks.map(v => {
+      const y = yAt(v);
+      const isZero = Math.abs(v) < 1e-9;
+      return `<line x1="0" y1="${y.toFixed(1)}" x2="${W}" y2="${y.toFixed(1)}" stroke="${isZero ? "#8d897f" : "#efede6"}" stroke-width="${isZero ? "1.3" : "1"}" ${isZero ? 'stroke-dasharray="4,3"' : ""}/>`;
+    }).join("");
+
+    const poly = (arr, col) => {
+      const pts = arr.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(" ");
+      return `<polyline fill="none" stroke="${col}" stroke-width="2.4" points="${pts}"/>`;
+    };
+
+    const dots = (arr, col, benchLbl) => arr.map((v, i) => {
+      const cx = xAt(i), cy = yAt(v);
+      return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="5.2" fill="${col}" stroke="#fff" stroke-width="1.3" style="cursor:pointer" data-b="${benchLbl}" data-i="${i}" data-v="${v}"/>`;
+    }).join("");
+
+    const yTicksHtml = cfg.yTicks.map(v => {
+      const pct = ((v - cfg.minY) / span) * 100;
+      const txt = v > 0 ? v.toFixed(1) : (v === 0 ? "0.0" : v.toFixed(1));
+      return `<div class="y-tick" style="bottom:${pct.toFixed(2)}%">$${txt}$</div>`;
+    }).join("");
+
+    const xTicksHtml = DEPTH_BINS.map((lbl, i) => {
+      const pct = (xAt(i) / W) * 100;
+      return `<div class="x-tick" style="left:${pct.toFixed(2)}%">${lbl}</div>`;
+    }).join("");
+
+    box.innerHTML = `
+      <div class="y-axis-lbl">${cfg.yLabel}</div>
+      <div class="plot-box">
+        <svg class="plot-svg" viewBox="0 0 ${W} ${H}">
+          ${gridHtml}
+          <rect x="${(xAt(0) - 24).toFixed(1)}" y="0" width="48" height="${H}" fill="#1e6b47" fill-opacity="0.06"/>
+          ${poly(cfg.sw, "#1f4e79")}
+          ${poly(cfg.tw, "#5b3f8c")}
+          ${dots(cfg.sw, "#1f4e79", "ScienceWorld")}
+          ${dots(cfg.tw, "#5b3f8c", "TextWorldExpress")}
+        </svg>
+        ${yTicksHtml}
+        ${xTicksHtml}
+        <div class="plot-callout" style="${cfg.calloutPos};max-width:410px;">
+          ${cfg.annot}
+        </div>
+      </div>`;
+
+    readout.innerHTML = `<span>绿色浅底列为 $t=0$ 无历史污染基线；悬停折线节点可查看精确分箱数值。</span>`;
+    typeset(box);
+    typeset(readout);
+
+    box.querySelectorAll("circle[data-i]").forEach(c => {
+      c.addEventListener("mouseenter", () => {
+        const idx = Number(c.dataset.i);
+        const vSw = cfg.sw[idx], vTw = cfg.tw[idx];
+        const fmt = x => (x >= 0 && curDepthMetric === "D_mean" ? "+" + x.toFixed(4) : x.toFixed(4));
+        readout.innerHTML = `<span><strong>轮次区间 ${DEPTH_BINS[idx]}：</strong>ScienceWorld $= ${fmt(vSw)}$，TextWorldExpress $= ${fmt(vTw)}$</span>`;
+        typeset(readout);
+      });
+    });
+  }
+
+  document.querySelectorAll("#c2-metric-seg .seg-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#c2-metric-seg .seg-btn").forEach(b => b.classList.toggle("active", b === btn));
+      curDepthMetric = btn.dataset.m;
+      renderDepthChart();
+    });
+  });
+
+  // =========================================================================
+  // TAB 3: INTERACTIVE PROTOCOL WALKTHROUGH
+  // 3 Authentic Recorded Episodes/Turns from turns.jsonl & turn_metrics.jsonl
+  // =========================================================================
+  const SAMPLES = {
+    sw_s14: {
+      id: "scienceworld__find-living-thing__s14",
+      bench: "ScienceWorld · L1 find-living-thing",
+      k: 3,
+      goal: "Focus on a living thing.",
+      succ: false,
+      priorTurns: [
+        {
+          t: 0,
+          obs: "This room is called the art studio. In it, you see: a large cupboard (closed), a table, wood cups (containing yellow/blue paint), a door to the hallway (closed).",
+          cot: "I need to find a living thing. Since there are no visible living things in the art studio, I should check other rooms. The hallway is accessible but its door is closed, so I need to open it first.",
+          act: "open door to hallway"
+        },
+        {
+          t: 1,
+          obs: "The door is now open.",
+          cot: "The hallway door is open, so I should go to the hallway to search for a living thing.",
+          act: "go to hallway"
+        },
+        {
+          t: 2,
+          obs: "You move to the hallway.",
+          cot: "I need to find a living thing. The hallway may contain one, so I should look around to check for any visible living things.",
+          act: "look around"
+        }
+      ],
+      obsK: "This room is called the hallway. You see: A door to the art studio (open), A door to the bedroom (closed), A door to the greenhouse (closed), A door to the kitchen (closed), A door to the living room (closed).",
+      cotK: "I need to find a living thing. The hallway does not have any visible living things, so I should check other rooms connected to the hallway. The living room is closed, so I need to open the door to it first.",
+      actK: "open door to living room",
+      actLen: 5,
+      cotLen: 46,
+      logpWith: "0.0000",
+      logpEmpty: "-8.5431",
+      logpNeu: "-20.7837",
+      I_emp: "1.7086",
+      I_neu: "4.1567",
+      D_self: "-0.5110",
+      A_proxy: "+0.1538",
+      validK: true,
+      redecodeKeepNote: "走廊同时连接 <code>bedroom / greenhouse / kitchen / living room</code> 四扇关闭的门。隐去第 $3$ 步 CoT 后，vLLM 不再被锁死在 <code>open door to living room</code>，而是按无思考策略分布重新采样候选门（例如直接采样 <code>open door to greenhouse</code> —— 温室里恰好有植物与蜜蜂等活物）。",
+      redecodeMaskNote: "将前 $0\\dots 2$ 步的 <code>Thought:</code> 一并替换为两行中性占位句后，连第 $0\\dots 2$ 步累积的“逐个房间排查找活物”上下文计划也被剥离，测出的是从开局到第 $3$ 步整条思维链对选门决策的总影响。",
+      onlineNote: "从第 $0$ 步起全程不输出 <code>Thought:</code>，模型每步直接由 vLLM 采样 <code>Action:</code> 并与环境真实交互 $35$ 步，在第 $1\\text{–}2$ 步就可能走向不同房间，终局直接统计 $20$ 个种子的通关率差。"
+    },
+    tw_s1014: {
+      id: "textworld_express__coin__s1014",
+      bench: "TextWorldExpress · L1 coin（终局成功通关局）",
+      k: 3,
+      goal: "Find and take the coin.",
+      succ: true,
+      priorTurns: [
+        {
+          t: 0,
+          obs: "You are in the kitchen. You see a stove, an oven, a closed fridge, a counter. To the East you see a closed frosted-glass door.",
+          cot: "I need to check all possible locations where the coin might be. The kitchen has several closed objects, so I should open them one by one to search for the coin.",
+          act: "open door to East"
+        },
+        {
+          t: 1,
+          obs: "You open the frosted-glass door, revealing the pantry.",
+          cot: "The pantry is now accessible. I should search inside the pantry for the coin.",
+          act: "look around"
+        },
+        {
+          t: 2,
+          obs: "You are in the kitchen... Through an open frosted-glass door, to the East you see the pantry.",
+          cot: "The pantry is visible but not yet explored. I should move to the pantry to search for the coin.",
+          act: "move East"
+        }
+      ],
+      obsK: "You are in the pantry. You see a folding chair (nothing on it) and a shelf (nothing on it). Through an open frosted-glass door, to the West you see the kitchen.",
+      cotK: "The pantry does not have the coin. I should return to the kitchen and check other closed objects like the fridge, kitchen cupboard, cutlery drawer, trash can, and dishwasher.",
+      actK: "move West",
+      actLen: 2,
+      cotLen: 37,
+      logpWith: "0.0000",
+      logpEmpty: "-13.0002",
+      logpNeu: "-19.2500",
+      I_emp: "6.5001",
+      I_neu: "9.6250",
+      D_self: "-0.5912",
+      A_proxy: "-0.2180",
+      validK: true,
+      redecodeKeepNote: "在无出口末端的储藏室看到空无一物后，当步 CoT 明确排除了储藏室并决定折返厨房（<code>move West</code>）。若隐去第 $3$ 步 CoT 做 vLLM 单步重解码，模型失去“已确认无硬币需折返”的当步判断，更容易采样出 <code>look around</code> / <code>inventory</code> 等原地逗留动作（这也是为何离线 $\\log\\pi(a_3\\mid h_3, \\varnothing) = -13.0002$）。",
+      redecodeMaskNote: "注意看第 $1$ 步的历史 <code>Thought:</code>（<em>“I should search inside the pantry”</em>）：在保留历史口径下，前序探索意图仍留在上下文中；切换为遮蔽历史口径后，前 $0\\dots 2$ 步全部改为两行中性占位句，可干净分离历史计划与当步折返判断。",
+      onlineNote: "特别留意本局的离线优势代理误判：本局最终成功找到硬币通关（<code>terminal_success = True</code>），第 $3$ 步从空储藏室折返厨房是完全正确的必经步，但因未来 $3$ 步内尚未摸到硬币（$\\tilde{G}^{(3)}_3 = 0$），原脚本赋给它负优势 $\\hat{A}_3 = -0.2180$，导致 $C_3 = \\hat{A}_3 I_3 = -1.417 &lt; 0$（有效折返推理反而被判负信用）。"
+    },
+    sw_s6: {
+      id: "scienceworld__find-living-thing__s6",
+      bench: "ScienceWorld · L1 find-living-thing（动作复述诱发高 I_t 打转案例）",
+      k: 6,
+      goal: "Focus on a living thing and move it to the red box in the bathroom.",
+      succ: false,
+      priorTurns: [
+        {
+          t: 4,
+          obs: "Ambiguous request: Please enter 0..3 to pick up adult bee (in greenhouse).",
+          cot: "I need to select a specific bee to pick up since there are multiple identical entries. I will choose the first one listed.",
+          act: "0"
+        },
+        {
+          t: 5,
+          obs: "You move the bee 1 to the inventory.",
+          cot: "I have picked up a bee. Now, I need to navigate to the bathroom to find the red box and move the bee into it.",
+          act: "go to bathroom"
+        }
+      ],
+      obsK: "No known action matches that input.",
+      obsKNote: "（注：温室与浴室并不直接相连，第 $5$ 步 <code>go to bathroom</code> 刚执行报错）",
+      cotK: "I made a mistake in the command. The correct command to go to the bathroom is \"go to bathroom\". I should try that instead.",
+      actK: "go to bathroom",
+      actLen: 3,
+      cotLen: 28,
+      logpWith: "0.0000",
+      logpEmpty: "-10.5003",
+      logpNeu: "-9.2538",
+      I_emp: "3.5001",
+      I_neu: "3.0846",
+      D_self: "-1.9097",
+      A_proxy: "-0.2581",
+      validK: false,
+      redecodeKeepNote: "这是一个很有代表性的对比：在第 $6$ 步隐去写有引号 <code>\"go to bathroom\"</code> 的错误旁白后，模型直接看到上一轮 <code>Action: go to bathroom</code> 紧接着报错 <code>No known action matches that input.</code>，此时它重复选 <code>go to bathroom</code> 的概率只有 $\\exp(-10.5003) \\approx 0.0028\\%$。用 vLLM 单步重解码会立刻采出 <code>look around</code> 或其他出口动作，跳出重复报错循环。",
+      redecodeMaskNote: "把前序第 $5$ 步写有 <em>“navigate to the bathroom”</em> 的思考也一并遮蔽为中性句后，模型完全基于当前报错观察重采合法探路动作，单步合法率从 $0\\%$ 显著回升。",
+      onlineNote: "正因为原离线 4-Pass 把错误的原动作 $a_6 =$ <code>go to bathroom</code> 锁死去算概率差，写了引号复述时概率近 $100\\%$，不写时概率仅 $0.0028\\%$，相减得出高达 $I_6 = +3.5001$ 的正向桥梁分。这清楚说明离线 $I_k$ 测的是“CoT 对原动作的推动幅度”，不能直接等同于“CoT 提升了决策质量”。"
+    }
+  };
+
+  let wtState = { sample: "sw_s14", mode: "offline_4pass", pass: "p12" };
+
+  function renderWalkthrough() {
+    const s = SAMPLES[wtState.sample];
+    const mode = wtState.mode;
+    const pass = wtState.pass;
+    document.getElementById("wt-subpass-row").style.display = mode === "offline_4pass" ? "flex" : "none";
+
+    const statusBar = document.getElementById("wt-status-bar");
+    const promptBox = document.getElementById("wt-prompt-box");
+    const metricBox = document.getElementById("wt-metric-box");
+    const enginePill = document.getElementById("wt-engine-pill");
+    const paradigmPill = document.getElementById("wt-paradigm-pill");
+    const promptTitle = document.getElementById("wt-prompt-title");
+
+    const NEU = "I will choose the next action based on the current observation.";
+
+    if (mode === "offline_4pass") {
+      enginePill.innerHTML = "HF Transformers（单次前向 Teacher-Forcing）";
+      paradigmPill.innerHTML = "范式 C · 离线打分";
+      paradigmPill.className = "tag warn";
+      promptTitle.innerHTML = `真实样本 <code>${esc(s.id)}</code>（第 $k=${s.k}$ 步）· 离线 Teacher-Forcing 输入对比`;
+
+      let histTag = "", targetTag = "";
+      if (pass === "p12" || pass === "p3") {
+        histTag = "保留前 $k-1$ 步原 <code>Thought:</code>（存在跨步泄漏）";
+        targetTag = "<span class=\"neg-txt\">锁死原动作 token</span> $a_k$ 不重采";
+      } else if (pass === "p4_bug") {
+        histTag = "<span class=\"neg-txt\">删成单行 Action:</span>（触发格式突变）";
+        targetTag = "锁死原思考 token $z_k$ 算 Teacher 似然";
+      } else {
+        histTag = "<span class=\"pos-txt\">两行中性占位句</span>（消除泄漏且格式对齐）";
+        targetTag = "锁死原思考 token $z_k$ 算对齐后 $D_{\\mathrm{self}}$";
+      }
+
+      statusBar.innerHTML = `
+        <div class="wt-stat-card"><div class="wt-stat-k">执行引擎与计算方式</div><div class="wt-stat-v"><code>HF Transformers</code> 单次并行前向</div></div>
+        <div class="wt-stat-card"><div class="wt-stat-k">第 $k=${s.k}$ 步目标序列</div><div class="wt-stat-v">${targetTag}</div></div>
+        <div class="wt-stat-card"><div class="wt-stat-k">前 $0\\dots ${s.k - 1}$ 步历史处理</div><div class="wt-stat-v">${histTag}</div></div>
+        <div class="wt-stat-card"><div class="wt-stat-k">环境交互次数</div><div class="wt-stat-v">$0$ 次（纯离线读取磁盘 JSONL）</div></div>`;
+
+      const histHtml = s.priorTurns.map(tr => {
+        if (pass === "p4_bug") {
+          return `
+            <div class="msg-block usr"><div class="msg-role"><span>User · Turn $${tr.t}$</span></div><code>Observation: ${esc(tr.obs)}</code></div>
+            <div class="msg-block ast-strip"><div class="msg-role"><span>Assistant · Turn $${tr.t}$（原版 Pass 4 删掉了整行 Thought:）</span><span class="tag neg">格式突变源</span></div><span class="tok-muted"><code>Thought: ${esc(tr.cot)}</code></span><br/><code>Action: ${esc(tr.act)}</code></div>`;
+        } else if (pass === "p4_fix") {
+          return `
+            <div class="msg-block usr"><div class="msg-role"><span>User · Turn $${tr.t}$</span></div><code>Observation: ${esc(tr.obs)}</code></div>
+            <div class="msg-block ast-neu"><div class="msg-role"><span>Assistant · Turn $${tr.t}$（修复版：两行中性占位，格式 $100\\%$ 对齐）</span><span class="tag pos">无泄漏且保格式</span></div><code>Thought: ${esc(NEU)}</code><br/><code>Action: ${esc(tr.act)}</code></div>`;
+        } else {
+          return `
+            <div class="msg-block usr"><div class="msg-role"><span>User · Turn $${tr.t}$</span></div><code>Observation: ${esc(tr.obs)}</code></div>
+            <div class="msg-block ast-keep"><div class="msg-role"><span>Assistant · Turn $${tr.t}$（完整保留历史 Thought）</span><span class="tag warn">自注意力可读历史计划</span></div><code>Thought: </code><span class="tok-leak"><code>${esc(tr.cot)}</code></span><br/><code>Action: ${esc(tr.act)}</code></div>`;
+        }
+      }).join("");
+
+      const obsNoteHtml = s.obsKNote ? ` <span class="muted-txt" style="font-family:var(--sans);font-size:12px;">${s.obsKNote}</span>` : "";
+      let turnKHtml = "";
+      if (pass === "p12") {
+        turnKHtml = `
+          <div class="msg-block usr"><div class="msg-role"><span>User · Turn $${s.k}$（当前步观察）</span></div><code>Observation: ${esc(s.obsK)}</code>${obsNoteHtml}</div>
+          <div class="msg-block ast-target"><div class="msg-role"><span>Pass 1 后缀（含原 CoT）</span><span>对锁死动作算 $\\log\\pi(a_k\\mid h_k, z_k) = ${s.logpWith}$</span></div><code>Thought: ${esc(s.cotK)}</code><br/><code>Action: </code><span class="tok-lock"><code>${esc(s.actK)}</code></span></div>
+          <div class="msg-block ast-target"><div class="msg-role"><span>Pass 2 后缀（空 CoT）</span><span>对<strong>同一串锁死动作</strong>算 $\\log\\pi(a_k\\mid h_k, \\varnothing) = ${s.logpEmpty}$</span></div><code>Thought:</code><br/><code>Action: </code><span class="tok-lock"><code>${esc(s.actK)}</code></span></div>`;
+      } else if (pass === "p3") {
+        turnKHtml = `
+          <div class="msg-block usr"><div class="msg-role"><span>User · Turn $${s.k}$（当前步观察）</span></div><code>Observation: ${esc(s.obsK)}</code>${obsNoteHtml}</div>
+          <div class="msg-block ast-target"><div class="msg-role"><span>Pass 3 后缀（中性句 CoT）</span><span>对<strong>同一串锁死动作</strong>算 $\\log\\pi(a_k\\mid h_k, z_{\\mathrm{neu}}) = ${s.logpNeu}$</span></div><code>Thought: ${esc(NEU)}</code><br/><code>Action: </code><span class="tok-lock"><code>${esc(s.actK)}</code></span></div>`;
+      } else {
+        turnKHtml = `
+          <div class="msg-block usr"><div class="msg-role"><span>User · Turn $${s.k}$（当前步观察）</span></div><code>Observation: ${esc(s.obsK)}</code>${obsNoteHtml}</div>
+          <div class="msg-block ast-target"><div class="msg-role"><span>Pass 4 目标切片（锁死学生生成的 $${s.cotLen}$ 个 CoT tokens）</span></div><code>Thought: </code><span class="tok-lock"><code>${esc(s.cotK)}</code></span></div>`;
+      }
+
+      promptBox.innerHTML = `<div class="msg-block sys"><div class="msg-role"><span>System Prompt</span><span>Goal: ${esc(s.goal)}</span></div>Two-line ReAct manual + benchmark command rules...</div>${histHtml}${turnKHtml}`;
+
+      metricBox.innerHTML = `
+        <h4 class="mini" style="margin-top:0;">本步真实落盘离线指标（<code>turn_metrics.jsonl</code>）</h4>
+        <div class="table-wrap">
+          <table class="booktabs">
+            <tbody>
+              <tr><td>原轨迹动作 $a_${s.k}$（长度 $|a_${s.k}| = ${s.actLen}$）</td><td class="num"><code>${esc(s.actK)}</code>（${s.validK ? '<span class="pos-txt">合法</span>' : '<span class="neg-txt">非法打转</span>'}）</td></tr>
+              <tr><td>Pass 1 含 CoT 动作对数似然 $\\log\\pi(a_k\\mid h_k, z_k)$</td><td class="num">$${s.logpWith}$</td></tr>
+              <tr><td>Pass 2 空 CoT 动作对数似然 $\\log\\pi(a_k\\mid h_k, \\varnothing)$</td><td class="num">$${s.logpEmpty}$</td></tr>
+              <tr class="em"><td><strong>空基线桥梁指标 $I_k$（<code>I_empty_norm</code>）</strong></td><td class="num"><strong>$${s.I_emp}$</strong></td></tr>
+              <tr><td>中性基线桥梁指标 $I_k^{\\mathrm{neu}}$（<code>I_neutral_norm</code>）</td><td class="num">$${s.I_neu}$</td></tr>
+              <tr><td>原版 Pass 4 自蒸馏差距 $\\bar{D}_{\\mathrm{self}}$</td><td class="num"><span class="neg-txt">$${s.D_self}$</span></td></tr>
+              <tr><td>原版 $3$ 步短窗口代理优势 $\\hat{A}_k$（<code>A_turn_proxy</code>）</td><td class="num">$${s.A_proxy}$</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout-box warn" style="margin-top:12px;">
+          <p><strong>诊断解读：</strong>${s.onlineNote}</p>
+        </div>`;
+    } else if (mode === "online_nocot") {
+      enginePill.innerHTML = "vLLM（$60$ 并发环境在线交互）";
+      paradigmPill.innerHTML = "范式 A · 整局在线对照";
+      paradigmPill.className = "tag pos";
+      promptTitle.innerHTML = `相同种子 <code>${esc(s.id)}</code> · 整局无 CoT 在线 Rollout（从第 $0$ 步起独立演化）`;
+
+      statusBar.innerHTML = `
+        <div class="wt-stat-card"><div class="wt-stat-k">执行引擎与计算方式</div><div class="wt-stat-v"><code>vLLM</code> 自回归采样 + 环境 <code>step()</code></div></div>
+        <div class="wt-stat-card"><div class="wt-stat-k">每步动作状态</div><div class="wt-stat-v"><span class="pos-txt">每步自由在线采样</span> $a_t'$</div></div>
+        <div class="wt-stat-card"><div class="wt-stat-k">历史上下文结构</div><div class="wt-stat-v">全程无 <code>Thought:</code>（或固定两行中性句）</div></div>
+        <div class="wt-stat-card"><div class="wt-stat-k">环境交互次数</div><div class="wt-stat-v">完整交互至终局 $T \\le 35$（$120$ 局约 $5.5\\text{ min}$）</div></div>`;
+
+      promptBox.innerHTML = `
+        <div class="msg-block sys"><div class="msg-role"><span>System Prompt（Action-Only 模式）</span><span>Goal: <code>${esc(s.goal)}</code></span></div><code>At every turn, output ONLY one valid command: Action: &lt;command&gt;</code></div>
+        <div class="msg-block usr"><div class="msg-role"><span>User · Turn $0$（与有 CoT 组完全相同的初始种子与观察 $o_0$）</span></div><code>Observation: ${esc(s.priorTurns[0].obs)}</code></div>
+        <div class="msg-block ast-neu"><div class="msg-role"><span>Assistant · Turn $0$（vLLM 在线采样）</span><span class="tag pos">自由生成</span></div><code>Action: </code><span class="tok-samp">&lt;vLLM 直接采样 $a_0'$ 并送入环境执行&gt;</span></div>
+        <div class="msg-block usr"><div class="msg-role"><span>User · Turn $1 \\dots T$（进入无 CoT 策略自己到达的真实状态分支 $o_1', o_2', \\dots$）</span></div>Observation: &lt;由环境根据 $a_0'$ 实时返回的新观察；无需对齐有 CoT 组的第 $k=${s.k}$ 步状态&gt;</div>`;
+
+      metricBox.innerHTML = `
+        <h4 class="mini" style="margin-top:0;">范式 A 产出的直接因果指标</h4>
+        <ul class="plain">
+          <li><strong>终局通关率差：</strong>$\\Delta S_{\\mathrm{succ}} = \\frac{1}{120}\\sum_{i=1}^{120}\\big(S_i^{\\mathrm{cot}} - S_i^{\\mathrm{no\\text{-}cot}}\\big)$（配对种子 McNemar / 聚类 bootstrap 检验）；</li>
+          <li><strong>平均归一化终局得分差：</strong>$\\Delta \\text{Score}_{\\mathrm{norm}}$；</li>
+          <li><strong>全轨迹动作合法率与打转率对比：</strong>检验去掉 CoT 后模型是减少复读还是更容易迷路。</li>
+        </ul>
+        <div class="callout-box pos">
+          <p><strong>为什么必须先补跑这一组？</strong> 因为它是唯一不依赖任何离线代理公式、不受概率天花板截断影响，能直接回答“在这 $120$ 道题上生成 CoT 到底有没有提高通关率”的端到端实验，且在 $1\\times$ A800 上跑完仅需约 $5.5$ 分钟。</p>
+        </div>`;
+    } else {
+      const isKeep = mode === "redecode_keep";
+      enginePill.innerHTML = "vLLM（静态批量单步重解码）";
+      paradigmPill.innerHTML = isKeep ? "范式 B1 · 保留历史 CoT" : "范式 B1 · 遮蔽历史 CoT";
+      paradigmPill.className = "tag vio";
+      promptTitle.innerHTML = `真实样本 <code>${esc(s.id)}</code> · 固定第 $k=${s.k}$ 步起跑线，vLLM 单步重采样新动作 $a_${s.k}'$`;
+
+      statusBar.innerHTML = `
+        <div class="wt-stat-card"><div class="wt-stat-k">执行引擎与计算方式</div><div class="wt-stat-v"><code>vLLM</code> 批量生成短动作（<code>max_tokens=16</code>）</div></div>
+        <div class="wt-stat-card"><div class="wt-stat-k">第 $k=${s.k}$ 步动作状态</div><div class="wt-stat-v"><span class="pos-txt">不锁死原动作！重采样 $a_${s.k}'$</span></div></div>
+        <div class="wt-stat-card"><div class="wt-stat-k">前 $0\\dots ${s.k - 1}$ 步历史处理</div><div class="wt-stat-v">${isKeep ? "保留原 <code>Thought:</code>（测当步边际效应）" : "<span class=\"pos-txt\">替换为两行中性句</span>（测累积效应）"}</div></div>
+        <div class="wt-stat-card"><div class="wt-stat-k">后续 $k+1\\dots T$ 交互</div><div class="wt-stat-v"><strong>无需重跑后续整局！</strong>全量步仅需 $1\\text{–}3\\text{ min}$</div></div>`;
+
+      const histHtml = s.priorTurns.map(tr => {
+        if (isKeep) {
+          return `
+            <div class="msg-block usr"><div class="msg-role"><span>User · Turn $${tr.t}$（严格复用原轨迹已走出的状态）</span></div><code>Observation: ${esc(tr.obs)}</code></div>
+            <div class="msg-block ast-keep"><div class="msg-role"><span>Assistant · Turn $${tr.t}$（口径 $\\text{B}_{\\mathrm{keep}}$：保留历史 Thought）</span></div><code>Thought: </code><span class="tok-leak"><code>${esc(tr.cot)}</code></span><br/><code>Action: ${esc(tr.act)}</code></div>`;
+        } else {
+          return `
+            <div class="msg-block usr"><div class="msg-role"><span>User · Turn $${tr.t}$（严格复用原轨迹已走出的状态）</span></div><code>Observation: ${esc(tr.obs)}</code></div>
+            <div class="msg-block ast-neu"><div class="msg-role"><span>Assistant · Turn $${tr.t}$（口径 $\\text{B}_{\\mathrm{mask}}$：替换为两行中性句）</span><span class="tag pos">切断跨步思考泄漏</span></div><code>Thought: ${esc(NEU)}</code><br/><code>Action: ${esc(tr.act)}</code></div>`;
+        }
+      }).join("");
+
+      const obsNoteHtml = s.obsKNote ? ` <span class="muted-txt" style="font-family:var(--sans);font-size:12px;">${s.obsKNote}</span>` : "";
+      const turnKHtml = `
+        <div class="msg-block usr"><div class="msg-role"><span>User · Turn $${s.k}$（严格对齐同一观察 $o_${s.k}$）</span></div><code>Observation: ${esc(s.obsK)}</code>${obsNoteHtml}</div>
+        <div class="msg-block ast-target"><div class="msg-role"><span>Assistant · Turn $${s.k}$（隐去当步思考，交给 vLLM 自由解码）</span><span class="tag pos">采样 $M=4$ 个候选 $a_${s.k}'$</span></div><code>Thought: ${esc(NEU)}</code><br/><code>Action: </code><span class="tok-samp">&lt;vLLM 重新采样新动作 $a_${s.k}'$，直接与原动作 <code>${esc(s.actK)}</code> 比对&gt;</span></div>`;
+
+      promptBox.innerHTML = `<div class="msg-block sys"><div class="msg-role"><span>System Prompt</span><span>Goal: ${esc(s.goal)}</span></div>Two-line ReAct manual + benchmark command rules...</div>${histHtml}${turnKHtml}`;
+
+      metricBox.innerHTML = `
+        <h4 class="mini" style="margin-top:0;">在本步上单步重解码能测出什么？</h4>
+        <div class="callout-box pos">
+          <p>${isKeep ? s.redecodeKeepNote : s.redecodeMaskNote}</p>
+        </div>
+        <h4 class="mini">为什么单步重解码（B1）比第 $k$ 步分叉跑完（B2）性价比高得多？</h4>
+        <ul class="plain">
+          <li><strong>零整局重放开销：</strong>直接把 <code>turns.jsonl</code> 里存好的 $3{,}299$ 个状态前缀一次性塞进 <code>vLLM</code>，每步只生成 $5\\text{–}16$ 个动作 token，不到 $1$ 分钟即可拿完全部 $3{,}299 \\times 4$ 个反事实新动作 $a_k'$；</li>
+          <li><strong>直接检验动作合法性与改变率：</strong>将 $a_k'$ 与原动作 <code>${esc(s.actK)}</code> 对比，既能算出真实的决策改变率 $1 - \\mathbb{P}(a_k' = a_k)$，又能在环境里单步验证 $v(a_k')$ 是否比 $v(a_k)$ 更合法；</li>
+          <li><strong>同时跑 $\\text{B}_{\\mathrm{keep}}$ 与 $\\text{B}_{\\mathrm{mask}}$ 的差值：</strong>两者动作改变率之差恰好定量测出“前 $k-1$ 步历史思考通过上下文跨步传递了多少决策信息”。</li>
+        </ul>`;
+    }
+
+    typeset(promptTitle);
+    typeset(enginePill);
+    typeset(statusBar);
+    typeset(promptBox);
+    typeset(metricBox);
+  }
+
+  document.querySelectorAll("#wt-sample-seg .seg-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#wt-sample-seg .seg-btn").forEach(b => b.classList.toggle("active", b === btn));
+      wtState.sample = btn.dataset.sample;
+      renderWalkthrough();
+    });
+  });
+  document.querySelectorAll("#wt-mode-seg .seg-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#wt-mode-seg .seg-btn").forEach(b => b.classList.toggle("active", b === btn));
+      wtState.mode = btn.dataset.mode;
+      renderWalkthrough();
+    });
+  });
+  document.querySelectorAll("#wt-pass-seg .seg-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#wt-pass-seg .seg-btn").forEach(b => b.classList.toggle("active", b === btn));
+      wtState.pass = btn.dataset.pass;
+      renderWalkthrough();
+    });
+  });
+
+  // ---------------- Initial Render & Strict KaTeX Self-Check ----------------
+  typeset(document.body);
+  renderIdentityChart();
+  renderDepthChart();
+  renderWalkthrough();
+
+  const initialHash = location.hash.slice(1);
+  if (TAB_IDS.includes(initialHash)) {
+    showTab(initialHash);
+  }
+
+  // Self-verify KaTeX rendering with throwOnError: true
+  const badge = document.getElementById("katex-selfcheck-badge");
+  try {
+    if (typeof katex !== "undefined") {
+      const checkExprs = [
+        "I_t = \\frac{1}{|a_t|}[\\log\\pi(a_t\\mid h_t, z_t) - \\log\\pi(a_t\\mid h_t, \\varnothing)]",
+        "d_{k_3}(r_{t,i}) = r_{t,i} - 1 - \\log r_{t,i} \\ge 0",
+        "R_{\\mathrm{surp}, t} = \\frac{-\\log\\pi(a_t\\mid h_t, z_{\\mathrm{neu}}) + \\log\\pi(a_t\\mid h_t, z_t)}{-\\log\\pi(a_t\\mid h_t, z_{\\mathrm{neu}}) + 10^{-6}}"
+      ];
+      checkExprs.forEach(tex => katex.renderToString(tex, { throwOnError: true }));
+      const renderedCount = document.querySelectorAll(".katex").length;
+      badge.innerHTML = `本地 KaTeX 离线渲染通过（页面共渲染 $${renderedCount}$ 处数学公式，$0$ 外部网络请求）`;
+      typeset(badge);
+    }
+  } catch (err) {
+    badge.textContent = "KaTeX 公式校验异常：" + err.message;
+  }
+})();
+</script>
+</body>
+</html>

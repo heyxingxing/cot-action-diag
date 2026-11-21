@@ -1,0 +1,1953 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agentic RL 信用分配领域实验方案参考手册</title>
+<meta name="description" content="38 篇 2024–2026 年 Agentic RL 信用分配核心文献（37 条实验协议）全文与附录核查：实验设计矩阵、并排协议对比器、嵌套分叉蓝图与讨论稿七项待决定实证回答" />
+<link rel="stylesheet" href="assets/katex/katex.min.css" />
+<script src="assets/katex/katex.min.js"></script>
+<script src="assets/katex/contrib/auto-render.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --soft: #f7f6f2;
+    --soft-2: #efede6;
+    --border: #e2dfd6;
+    --rule: #222222;
+    --text: #1b1b1b;
+    --muted: #5b5850;
+    --faint: #8d897f;
+    --accent: #1f4e79;
+    --accent-soft: #eaf0f6;
+    --pos: #1e6b47;
+    --pos-soft: #f1f8f4;
+    --neg: #a3262c;
+    --neg-soft: #fbf2f2;
+    --warn: #8a5a00;
+    --warn-soft: #fbf6ea;
+    --violet: #5b3f8c;
+    --violet-soft: #f6f3fa;
+    --serif: "Charter", "Bitstream Charter", "Sitka Text", "Cambria", "Georgia", "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  html { color-scheme: light; scroll-behavior: smooth; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--serif);
+    font-size: 16px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .katex { font-size: 1.04em; }
+  .katex-display { margin: 12px 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(31,78,121,.28); }
+  a:hover { border-bottom-color: var(--accent); }
+  code { font-family: var(--mono); font-size: .84em; background: var(--soft); padding: .08em .35em; border-radius: 3px; color: #222; }
+  p { margin: 0 0 12px; }
+
+  /* Masthead — strict child combinator > so .katex internal spans are never matched */
+  .masthead { border-bottom: 1px solid var(--border); padding: 44px 20px 26px; text-align: center; }
+  .masthead h1 { font-size: 29px; font-weight: 600; line-height: 1.35; margin: 0 0 8px; }
+  .masthead .sub { font-size: 16.5px; color: var(--muted); margin: 0 auto 14px; max-width: 880px; }
+  .masthead .meta { font-family: var(--sans); font-size: 13px; color: var(--muted); }
+  .masthead .meta > span + span::before { content: "·"; margin: 0 9px; color: var(--faint); }
+  .masthead > .meta + .meta { margin-top: 8px; }
+  .masthead .meta a.nav-cur { color: var(--text); font-weight: 600; border-bottom: 1.5px solid var(--text); }
+
+  /* Sticky Tabs */
+  nav.tabs {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: rgba(255,255,255,.96);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--border);
+  }
+  .tabs-inner { max-width: 1260px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; overflow-x: auto; }
+  .tab-btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--muted);
+    padding: 12px 14px;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--text); font-weight: 600; }
+  .cmp-badge {
+    display: inline-block;
+    margin-left: 5px;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.55;
+  }
+
+  main { max-width: 1260px; margin: 0 auto; padding: 30px 16px 96px; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .prose { max-width: 940px; }
+  .wide-block { max-width: 1220px; margin: 16px 0 28px; }
+
+  h2.sec { font-size: 22px; font-weight: 600; margin: 42px 0 14px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .tab-panel > h2.sec:first-child, .tab-panel > .prose > h2.sec:first-child { margin-top: 0; }
+  h2.sec .sec-num { color: var(--faint); font-weight: 500; margin-right: 10px; font-family: var(--sans); }
+  h3.sub { font-size: 17.5px; font-weight: 600; margin: 26px 0 9px; }
+  .note { font-size: 14px; color: var(--muted); }
+  .abstract { background: var(--soft); border-left: 3px solid var(--accent); padding: 16px 20px; margin: 0 0 18px; }
+  .abstract p:last-child { margin-bottom: 0; }
+
+  .callout-box { border: 1px solid var(--border); border-left: 3px solid var(--accent); background: #faf9f6; border-radius: 4px; padding: 13px 16px; margin: 14px 0 18px; font-size: 15px; }
+  .callout-box.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .callout-box.neg { border-left-color: var(--neg); background: var(--neg-soft); }
+  .callout-box.pos { border-left-color: var(--pos); background: var(--pos-soft); }
+  .callout-box p:last-child { margin-bottom: 0; }
+
+  ol.findings { padding-left: 1.45em; margin: 0 0 16px; }
+  ol.findings > li { margin-bottom: 14px; padding-left: 4px; }
+  ul.plain { padding-left: 1.35em; margin: 0 0 12px; }
+  ul.plain > li { margin-bottom: 6px; }
+
+  /* KPI Grid */
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 18px 0 24px; }
+  .kpi-card { border: 1px solid var(--border); border-radius: 5px; padding: 14px 16px; background: #fff; }
+  .kpi-card .kpi-label { font-family: var(--sans); font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .kpi-card .kpi-val { font-family: var(--sans); font-size: 24px; font-weight: 600; color: var(--text); line-height: 1.25; }
+  .kpi-card .kpi-sub { font-family: var(--sans); font-size: 12.5px; color: var(--muted); margin-top: 5px; line-height: 1.45; }
+
+  /* Booktabs Tables */
+  .table-wrap { overflow-x: auto; margin: 10px 0 8px; }
+  table.booktabs {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums lining-nums;
+    border-top: 1.5px solid var(--rule);
+    border-bottom: 1.5px solid var(--rule);
+  }
+  table.booktabs thead th {
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    padding: 8px 10px;
+    vertical-align: bottom;
+    background: #fcfbf9;
+  }
+  table.booktabs td {
+    padding: 7px 10px;
+    vertical-align: top;
+    border-bottom: 1px solid #efede6;
+    line-height: 1.6;
+  }
+  table.booktabs tbody tr:last-child td { border-bottom: 0; }
+  table.booktabs th.num, table.booktabs td.num { text-align: right; white-space: nowrap; }
+  table.booktabs tr.em td { background: #f8f5ec; }
+  table.booktabs tr.warn-row td { background: var(--neg-soft); }
+  table.booktabs tr.sep td { border-top: 1px solid var(--rule); }
+  .caption { font-size: 13.5px; color: var(--muted); margin: 6px 0 18px; }
+
+  /* Tags & Buttons */
+  .tag {
+    display: inline-block;
+    font-family: var(--sans);
+    font-size: 11.5px;
+    font-weight: 500;
+    padding: 1px 7px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: #fff;
+    white-space: nowrap;
+    line-height: 1.65;
+    margin-right: 4px;
+    margin-bottom: 2px;
+  }
+  .tag.pos { color: var(--pos); border-color: #b9d6c6; background: var(--pos-soft); }
+  .tag.neg { color: var(--neg); border-color: #e3c0c2; background: var(--neg-soft); }
+  .tag.acc { color: var(--accent); border-color: #c4d4e4; background: var(--accent-soft); }
+  .tag.vio { color: var(--violet); border-color: #d6cde6; background: var(--violet-soft); }
+  .tag.warn { color: var(--warn); border-color: #e6d4ad; background: var(--warn-soft); }
+
+  .btn {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 5px;
+    padding: 4px 10px;
+    cursor: pointer;
+    color: var(--text);
+    white-space: nowrap;
+    line-height: 1.5;
+  }
+  .btn:hover { background: var(--soft); border-color: #ccc7ba; }
+  .btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.subtle { color: var(--accent); border-color: #c4d4e4; background: var(--accent-soft); }
+  .btn.subtle:hover { background: #dce7f2; }
+
+  /* Filter Toolbar */
+  .filter-bar {
+    background: var(--soft);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin: 0 0 16px;
+    font-family: var(--sans);
+    font-size: 13px;
+  }
+  .filter-row { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .filter-field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; font-weight: 500; }
+  .filter-field input, .filter-field select {
+    width: 100%;
+    padding: 6px 9px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: #fff;
+    font-size: 13px;
+    font-family: var(--sans);
+    color: var(--text);
+  }
+  .filter-toggles { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+  .toggle-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .check-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 12.5px;
+    color: var(--text);
+    user-select: none;
+  }
+  .check-pill input { margin: 0; accent-color: var(--accent); }
+  .filter-count { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+  /* Expandable Paper Detail Drawer inside Matrix */
+  tr.paper-row { cursor: pointer; }
+  tr.paper-row:hover td { background: #faf9f5; }
+  tr.paper-row.expanded td { background: var(--accent-soft); }
+  tr.detail-row td { padding: 0; background: #fcfbf9; border-bottom: 1.5px solid var(--border); }
+  .detail-drawer { padding: 16px 20px; }
+  .detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .detail-title { font-size: 16.5px; font-weight: 600; margin: 0 0 4px; }
+  .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; font-size: 14px; }
+  .detail-cell { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; }
+  .detail-cell-lbl { font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+  .detail-cell.full { grid-column: 1 / -1; }
+  .detail-cell.warn-cell { border-left: 3px solid var(--warn); background: #fffdf8; }
+
+  /* Comparator Controls */
+  .preset-bar { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 14px; align-items: center; font-family: var(--sans); font-size: 12.5px; }
+  .preset-lbl { color: var(--muted); font-weight: 600; margin-right: 4px; }
+  .cmp-selectors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 18px; font-family: var(--sans); }
+  .cmp-slot { background: var(--soft); border: 1px solid var(--border); border-radius: 5px; padding: 10px 12px; }
+  .cmp-slot label { display: block; font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 4px; }
+  .cmp-slot select { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 5px; background: #fff; font-size: 13px; font-family: var(--sans); color: var(--text); }
+  table.cmp-table th.dim-col, table.cmp-table td.dim-col { width: 155px; font-family: var(--sans); font-weight: 600; font-size: 13px; color: var(--muted); background: #faf9f6; }
+  table.cmp-table td.val-col { width: calc((100% - 155px) / 3); }
+
+  /* SVG Diagram Container */
+  .svg-frame { border: 1px solid var(--border); border-radius: 6px; background: #fff; padding: 16px; margin: 14px 0 18px; overflow-x: auto; }
+  .svg-frame svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+
+  /* Decision Cards */
+  .dec-card { border: 1px solid var(--border); border-radius: 6px; padding: 18px 20px; margin-bottom: 18px; background: #fff; }
+  .dec-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .dec-q { font-size: 17.5px; font-weight: 600; margin: 0; }
+  .dec-verdict { background: var(--pos-soft); border-left: 3px solid var(--pos); padding: 10px 14px; border-radius: 3px; margin-bottom: 12px; font-size: 15px; }
+  .dec-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; font-family: var(--sans); font-size: 12px; }
+  .paper-chip {
+    font-family: var(--sans);
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid #c4d4e4;
+    background: var(--accent-soft);
+    color: var(--accent);
+    cursor: pointer;
+  }
+  .paper-chip:hover { background: #d6e4f0; }
+
+  @media (max-width: 960px) {
+    .kpi-grid, .filter-row, .cmp-selectors, .detail-grid { grid-template-columns: 1fr; }
+    .masthead h1 { font-size: 23px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <h1>Agentic RL 信用分配领域实验方案参考手册</h1>
+  <p class="sub">38 篇 2024–2026 年核心文献（37 条独立实验协议）全文与附录核查 · 面向 Qwen3.5-9B Coding Agent 嵌套分叉方案</p>
+  <div class="meta">
+    <span>生成于 2026-11-21</span>
+    <span>全部 38 篇全文 / 附录 / 本地 PDF 核实</span>
+    <span>含 1 项 arXiv 撤稿预警</span>
+    <span>对齐《讨论稿》步骤 1–7 与 §七</span>
+    <span><a href="https://github.com/heyxingxing/cot-action-diag">代码与数据</a></span>
+  </div>
+  <div class="meta" aria-label="系列报告导航">
+    <span><a href="index.html">第一轮诊断报告</a></span>
+    <span><a href="cot_action_diag_review.html">第一轮诊断问题复盘与重设计</a></span>
+    <span><a href="field_experimental_protocols.html" class="nav-cur" aria-current="page">领域 37 篇实验方案对比</a></span>
+    <span><a href="interactive_credit_explorer.html"><code>C3A</code> 合成 MDP 与交互计算器</a></span>
+  </div>
+</header>
+
+<nav class="tabs">
+  <div class="tabs-inner">
+    <button class="tab-btn active" data-tab="overview">1 · 全景摘要与勘误</button>
+    <button class="tab-btn" data-tab="matrix">2 · 37 条实验协议矩阵</button>
+    <button class="tab-btn" data-tab="comparator">3 · 并排协议对比器<span class="cmp-badge" id="cmp-count-badge">3</span></button>
+    <button class="tab-btn" data-tab="blueprint">4 · 嵌套分叉与步骤 4–7 蓝图</button>
+    <button class="tab-btn" data-tab="decisions">5 · 讨论稿 §七 7 项待决定回答</button>
+  </div>
+</nav>
+
+<main>
+<!-- ============================ TAB 1: OVERVIEW ============================ -->
+<section id="overview" class="tab-panel active">
+  <div class="prose">
+    <h2 class="sec"><span class="sec-num">1.1</span>摘要与研究定位</h2>
+    <div class="abstract">
+      <p>本手册是对《CoT-Action 信用分配：现状、教训与下一步（讨论稿）》第三节文献清单的全面全文与附录核查升级版。四组专项调研覆盖了 2024–2026 年共 <strong>38 篇代表性论文</strong>（整理为 <strong>37 个独立实验条目</strong>，其中 SWE-rebench V1 与 V2 合并为 1 条），全部基于 arXiv 官方 HTML 全文、附录、本地 PDF 及公开代码仓库逐项提取 8 维实验设计细节：基座模型与 SFT、训练池与难度过滤、中间分叉与状态恢复、真值构建与统计指标、算力公平性控制、基线与随机对照、硬件开销及负面发现。</p>
+      <p>核心结论：(1) 全部 38 篇文献中，<strong>尚无工作在真实长程 Coding Agent 上通过容器快照嵌套分叉实测分离思考功劳 $A_{\mathrm{CoT}}$ 与动作功劳 $A_{\mathrm{act}}$</strong>；(2) 全文核查纠偏了 8 项仅读摘要极易误解的关键事实（含 TWICE <code>arXiv:2610.31544</code> v2 被撤稿预警、CRR 实际关闭 thinking 且用轻量无容器沙盒、TRCA 全程屏蔽 <code>&lt;think&gt;</code> 只训 <code>&lt;action&gt;</code> 等）；(3) 为《讨论稿》在 <code>Qwen3.5-9B</code> 与 <code>R2E-Gym</code> 上的步骤 1–7 工程落地和 §七 全部 7 项待决定问题，给出可直接执行的实验协议与算力分档账本。</p>
+    </div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">全文 / PDF 核查规模</div>
+      <div class="kpi-val">38 篇 / 37 条</div>
+      <div class="kpi-sub">100% 核对正文与附录（0 篇停留在仅读摘要），其中 8 篇加核官方开源训练脚本</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">学术溯源预警</div>
+      <div class="kpi-val" style="color:var(--neg);">1 篇已撤稿</div>
+      <div class="kpi-sub">TWICE (<code>arXiv:2610.31544v2</code>) 于 2026-10-26 因单位标注错误被 arXiv 管理员撤回</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">领域报告规范现状</div>
+      <div class="kpi-val">19 / 42 对齐</div>
+      <div class="kpi-sub">69 篇综述审计显示：仅 19/42 满足完整预算对齐，仅 10/42 跑多种子，21/42 无方差报告</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Coding 嵌套分叉空白</div>
+      <div class="kpi-val" style="color:var(--pos);">0 篇覆盖</div>
+      <div class="kpi-sub">CRR 关思考、RICE-PO 捆绑 $(z,a)$、C3 仅限纯文本数学链，本课题窗口明确存在</div>
+    </div>
+  </div>
+
+  <div class="wide-block">
+    <h2 class="sec"><span class="sec-num">1.2</span>37 条实验协议的家族分布与算力公平性口径统计</h2>
+    <div class="svg-frame" id="overview-chart-box"></div>
+    <p class="caption">图 1　37 个核查实验条目按方法家族（左）与算力公平性控制口径（右）的分布统计。真正完成严格等墙钟 / 等 GPU 小时对齐（含超额等壁钟）的工作仅占少数，是 2026 年审稿的核心区分度所在。</p>
+  </div>
+
+  <div class="wide-block">
+    <h2 class="sec"><span class="sec-num">1.3</span>全文核查纠偏：仅读 arXiv 摘要极易误解的 8 项实验事实</h2>
+    <div class="table-wrap">
+      <table class="booktabs">
+        <thead>
+          <tr>
+            <th style="width:185px;">论文与编号</th>
+            <th style="width:270px;">仅读摘要容易形成的印象</th>
+            <th>正文 / 附录 / 源码核实后的真实实验事实</th>
+            <th style="width:240px;">对本课题实验设计的直接影响</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="warn-row">
+            <td><b>TWICE</b><br><code>arXiv:2610.31544</code><br><span class="tag neg">v2 已撤稿</span></td>
+            <td>分叉共用同一份随机数的已发表有效方法，可直接借鉴用于降方差</td>
+            <td><code>v2</code> 已于 2026-10-26 因作者单位信息错误被 arXiv 管理员撤稿；且其 Philox 共享键虽降低<b>差值方差</b>，却会破坏独立样本 ANOVA 方差分解公式</td>
+            <td>禁止引用其分数作 SOTA；仅借鉴 Philox 键用于成对优势差值，<b>ANOVA 分解必须用独立下游种子</b></td>
+          </tr>
+          <tr>
+            <td><b>CRR</b><br><code>arXiv:2609.33875v4</code><br><span class="tag acc">NeurIPS 2026</span></td>
+            <td>用 Docker 容器克隆给带 CoT 的 14B Coding 模型做分叉 RL</td>
+            <td>附录 E 明确 <code>Qwen3-14B</code> 全程运行在 <b>non-thinking 模式</b> + JSON 语法硬约束；沙盒为轻量无容器 <code>SWE-MiniSandbox</code>；人为将快照成本乘 $2\times\text{–}4\times$ 时等墙钟优势即归零倒挂</td>
+            <td>步骤 1 必须先压测快照物化延迟（对标 $m=2\text{–}4$ 盈亏线），并前置 3 遍标准补丁确定性过滤</td>
+          </tr>
+          <tr>
+            <td><b>TRCA</b><br><code>arXiv:2608.16156v2</code><br><span class="tag">4×A800</span></td>
+            <td>用规则/裁判给多轮 CoT+Action 步分配稠密过程奖励</td>
+            <td>训练前一次性由强模型生成 15 条确定性布尔算子（训练期零裁判开销）；且附录 B.3 披露<b>屏蔽全部 <code>&lt;think&gt;</code> token，仅对 <code>&lt;action&gt;</code> 算策略梯度</b></td>
+            <td>印证短动作环境 CoT 功劳模糊；RL 阶段应把“仅训 Action 屏蔽 CoT”设为极简强基线</td>
+          </tr>
+          <tr>
+            <td><b>AgentPRM</b><br><code>arXiv:2511.08325v1</code><br><span class="tag">复旦 Xi 等</span></td>
+            <td>用 TD+GAE 训出过程奖励模型并做多轮稠密 RL</td>
+            <td>主实验为推理期 Best-of-N / Beam Search；附录 C 明确其 PPO 验证<b>仅取 PRM 末步分作为整轨稀疏奖励</b>；MC 对照用“16 轨有 1 轨成即标 1”存在乐观偏差</td>
+            <td>不可将其归为逐轮稠密 RL 基线；嵌套分叉真值必用样本均值而非存在性二值标签</td>
+          </tr>
+          <tr>
+            <td><b>OG-OPD &amp; Progress Adv.</b><br><code>2609.35319</code> / <code>2606.26080</code></td>
+            <td>已在长 CoT 多轮场景充分验证了教师差距与策略对数比优势</td>
+            <td>两篇核心实验均显式<b>关闭原生 thinking 模式</b>（<code>enable_thinking=false</code>）；OG-OPD 实测大 gap 处教师伤害（$10.8\%$）高于救援（$8.8\%$）</td>
+            <td>步骤 6 评测 Progress Advantage 须分别测 CoT 段与 Action 段，且用固定先验聚合（严禁 25 选 1）</td>
+          </tr>
+          <tr>
+            <td><b>Terminal-World / R2E-Gym / SWE-rebench</b></td>
+            <td>可直接拿来直接跑无噪声 Coding/Terminal RL 的成熟训练池</td>
+            <td>三者原论文均<b>未做端到端在线 RL</b>（仅 SFT/建库）；Terminal-World 4 裁判审计发现 <b>$67.7\%$ 验证器判败轨语义实已完成</b>（$\kappa=0.742$）；SWE-rebench V2 单镜像均值 $0.84$ GiB、全库 $26.36$ TiB</td>
+            <td>170 GB 磁盘优先选 <code>R2E-Gym-Subset</code>（10 仓复用基础层，Arctic-SWE 实测质量留存 $57.8\%$ 最高）</td>
+          </tr>
+          <tr>
+            <td><b>TRIAGE</b><br><code>arXiv:2606.32017v3</code></td>
+            <td>成功轨迹中普遍存在 $43\%\text{–}48\%$ 的退步步，任意 LLM 裁判即可筛出</td>
+            <td>$43\%/48\%$ 来自有意挑选的 6 条轨迹长度加权值（含失败轨）；且<b>不开 thinking 的裁判在 <code>R-in-success</code> 格 F1 仅 $24\%$，训完反而输给 GRPO</b></td>
+            <td>步骤 6 评测 LLM 裁判必须用开 thinking + 前后 5 步局部窗口 + 隐去终局结果 + 输出证据串的强配置</td>
+          </tr>
+          <tr>
+            <td><b>C3 &amp; DART 文献消歧</b><br><code>2603.06859</code> / <code>2602.00994</code></td>
+            <td>C3 仅属多智能体领域；DART 为单一方法</td>
+            <td>C3 v4（<em>The Trace Is the State</em>）的 2-agent <code>Reasoner→Actor</code>（$2\times 4$ 嵌套树）与单智能体 <code>CoT→Action</code> 完全同构；DART 存在双 LoRA 参数解耦（<code>2602.00994</code>）与跳过思考（Lee 2026a）两篇同名工作</td>
+            <td>直接借用 C3 折半信度、双独立参考噪声上界与 Prop. 1；将双 LoRA 硬路由列为步骤 7 正交消融轴</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="prose">
+    <h2 class="sec"><span class="sec-num">1.4</span>跨论文方法学共识：7 项实验设计底线</h2>
+    <ol class="findings">
+      <li><b>算力公平性必须跨过 Iso-Step 门槛</b>：仅对齐梯度步数会掩盖 $1.5\times\text{–}3.5\times$ 的额外分支、动态采样（如 DAPO 的 $3\times$ 生成批）或裁判耗时。在线 RL 推荐采用 <b>CRR（全计费 40.125h 等墙钟）</b>、<b>FACTOR（<code>SERL-Extended</code> 188 步等 GPU 小时）</b>或 <b>TRIAGE（GRPO 延至 300 步超额等壁钟）</b>口径。</li>
+      <li><b>强制配备四类阴性对照与非归因强基线</b>：凡对特定轮/token 集中赋权，必跑 <code>Coverage, Not Targeting</code> 式<b>等集中度随机轮置换对照（Shuffled）</b>；凡用分叉采样，必跑 CRR 式<b>同分叉预算 <code>Search-Select-GRPO</code></b> 区分“信用赋值”与“筛选好分支”；并先立 ActFocus（CoT 静态降权 $\alpha\in\{0.1,0.3\}$）、FACTOR（Action-Mean 消长度偏置）与 TRCA（仅训 Action）三类零额外采样强基线。</li>
+      <li><b>离线估值诊断须破除“指标假象”</b>：VinePPO 证明 Explained Variance 达 $0.7\text{–}0.9$ 的 Critic 在同状态 5 选 1 排序上仍近随机猜测（$20\%$）；ConCal 的 <code>Gap-matched</code> 对照证明 MSE 下降大头常来自方差收缩而非排序纠偏；C3 证明必须配<b>独立随机种子真值 + 第二独立参考噪声上界（Noise Ceiling）</b>。</li>
+      <li><b>Qwen3 / Qwen3.5 专属四道工程保真门槛</b>：① GatedDeltaNet 递归缓存 $S_t$、门控与 $A_{\log}$ 全链路锁 <code>FP32</code> 且权重刷新必重算缓存（Arctic-SWE）；② 严格 <b>Token-in-Token-out</b> 缓存原始 token ID 消除重分词漂移（AT²PO、BranPO）；③ 离线诊断开 <code>VLLM_BATCH_INVARIANT=1</code> 将冷重喂 $+14\text{–}28\text{ pp}$ 漂移与常规 $9\text{–}23\%$ 复现地板归零（Re-feeding）；④ 5 步 <code>.git</code> 清理 + 断网 + 原始 token 畸形格式严查（Arctic-SWE）。</li>
+      <li><b>共享随机数（CRN）须区分“优势差值”与“ANOVA 方差分解”</b>：使用 Philox 层次键 <code>(episode, turn, line, pos)</code> 共享下游随机数可大幅降低成对优势差值方差，但跨分支正协方差会破坏独立样本 ANOVA 扣除公式 $\hat{B}=s^2(\bar{Q}_z)-\hat{W}/K_a$；因此<b>全方差分解须用独立下游种子</b>，仅在成对差值或 OPD 配对检验中用共享种子表。</li>
+      <li><b>训练稳定五约束</b>：局部小状态/分支组忌除组内 <code>std</code>（ConCal / GiGPO / Arctic-SWE 建议去 std 或批级 RMS）；局部树优势小 $K$ 须叠加全局基线（Tree-GRPO / AT²PO）；Coding 长程 RL 忌加长度惩罚（Arctic-SWE 后期崩至 $8.4\%$）；不可丢弃失败负样本且须压制失败轨重复动作（PaTR / Self-Credit）；熵选点须加单轨上限或连续惩罚防 $93.4\%$ 预算塌缩（AEPO）。</li>
+      <li><b>杜绝单跑挑优，小样本评测必用同批配对 + 层次 Bootstrap</b>：固定预设终点步数、至少 3 独立种子、附完整 Compute Ledger（FACTOR）；面对小基准（如 TB 2.1 仅 89 题），因跨批次重评漂移可达 $\pm 5\text{–}15\text{ pp}$（Coverage, Not Targeting），须在同一会话内配对评测并汇报默认/宽裕双超时预算（Benchmarks as Software）。</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============================ TAB 2: MATRIX ============================ -->
+<section id="matrix" class="tab-panel">
+  <div class="prose">
+    <h2 class="sec"><span class="sec-num">2.1</span>37 条实验协议交互式检索与筛选矩阵</h2>
+    <p class="note">涵盖全部 38 篇核查文献（<code>SWE-rebench V1 &amp; V2</code> 合并为 1 条）。点击任意行可展开 8 维完整实验方案抽屉；点击“加入对比”可将最多 3 篇论文送入 <strong>Tab 3 并排协议对比器</strong>。</p>
+  </div>
+
+  <div class="filter-bar">
+    <div class="filter-row">
+      <div class="filter-field">
+        <label for="f-search">关键词全文检索（论文名 / arXiv / 模型 / 环境 / 指标 / 负面发现）</label>
+        <input id="f-search" type="text" placeholder="例如：Qwen3.5、R2E-Gym、Shuffled、GatedDeltaNet、2610.35013…" />
+      </div>
+      <div class="filter-field">
+        <label for="f-family">方法家族</label>
+        <select id="f-family">
+          <option value="all">全部家族（37 条）</option>
+          <option value="A">A · 分叉快照与重放保真（7）</option>
+          <option value="B">B · 定位诊断、分组与树展开（9）</option>
+          <option value="C">C · CoT-Action 与 OPD / 进度（10）</option>
+          <option value="D">D · Coding 基建、综述与裁判（11）</option>
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="f-parity">算力公平性口径</label>
+        <select id="f-parity">
+          <option value="all">全部口径</option>
+          <option value="wallclock">Iso-Wall-Clock / Iso-GPU-Hour（强）</option>
+          <option value="rollout">Iso-Rollout / Iso-Token / 单步同批（中）</option>
+          <option value="step">仅 Iso-Step 或未完全对齐（弱）</option>
+          <option value="eval">纯诊断 / 建库 / 推理评测（无 RL 对比）</option>
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="f-restore">状态恢复方式</label>
+        <select id="f-restore">
+          <option value="all">全部方式</option>
+          <option value="sandbox">容器 / 轻沙盒快照</option>
+          <option value="sim">模拟器状态 / 种子重放</option>
+          <option value="exact_tok">Token-in-Token-out / 热 KV 缓存</option>
+          <option value="text">纯文本前缀重喂</option>
+          <option value="none">无中途分叉</option>
+        </select>
+      </div>
+    </div>
+    <div class="filter-toggles">
+      <div class="toggle-group">
+        <label class="check-pill"><input type="checkbox" id="f-coding" /> 仅看 Coding / SWE / Terminal</label>
+        <label class="check-pill"><input type="checkbox" id="f-random" /> 仅看含随机 / 置换 / 筛选对照</label>
+        <label class="check-pill"><input type="checkbox" id="f-qwen3" /> 仅看实测 Qwen3 / Qwen3.5 系列</label>
+        <button class="btn" id="f-reset" type="button">重置筛选</button>
+      </div>
+      <div class="filter-count" id="matrix-count">当前显示 37 / 37 条</div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="booktabs" id="matrix-table">
+      <thead>
+        <tr>
+          <th style="width:190px;">论文 · arXiv · 证据</th>
+          <th style="width:92px;">家族</th>
+          <th style="width:205px;">基座模型与思考 / SFT</th>
+          <th style="width:155px;">算力公平性口径</th>
+          <th style="width:165px;">分叉与状态恢复</th>
+          <th style="width:170px;">硬件与实测开销</th>
+          <th style="width:140px;">操作</th>
+        </tr>
+      </thead>
+      <tbody id="matrix-tbody"></tbody>
+    </table>
+  </div>
+  <p class="caption">表 2　全领域 37 条实验方案主表。凡原论文与附录均未披露的硬件型号或耗时均明示“未披露”，不作外推。</p>
+</section>
+
+<!-- ============================ TAB 3: COMPARATOR ============================ -->
+<section id="comparator" class="tab-panel">
+  <div class="prose">
+    <h2 class="sec"><span class="sec-num">3.1</span>并排实验协议对比器（2–3 篇自由横向对照）</h2>
+    <p class="note">可点选下方预设专题组合，或在任意下拉框中切换 37 条协议中的 2–3 篇，逐项对齐核查全部 10 个实验维度。</p>
+  </div>
+
+  <div class="preset-bar">
+    <span class="preset-lbl">快捷专题预设：</span>
+    <button class="btn subtle" type="button" data-preset="crr,arctic_swe,patr">Coding 分叉与基建</button>
+    <button class="btn subtle" type="button" data-preset="c3,vineppo,factor">反事实真值评测范本</button>
+    <button class="btn subtle" type="button" data-preset="og_opd,factor,coverage">OPD 与随机对照</button>
+    <button class="btn subtle" type="button" data-preset="actfocus,dart,trca">CoT vs Action 拆分</button>
+    <button class="btn subtle" type="button" data-preset="at2po,branpo,aepo">树采样与防崩塌</button>
+    <button class="btn subtle" type="button" data-preset="triage,progress_adv,self_credit">裁判与免训练打分</button>
+  </div>
+
+  <div class="cmp-selectors">
+    <div class="cmp-slot">
+      <label for="cmp-s0">对比栏 A（必选）</label>
+      <select id="cmp-s0"></select>
+    </div>
+    <div class="cmp-slot">
+      <label for="cmp-s1">对比栏 B（必选）</label>
+      <select id="cmp-s1"></select>
+    </div>
+    <div class="cmp-slot">
+      <label for="cmp-s2">对比栏 C（可选）</label>
+      <select id="cmp-s2"></select>
+    </div>
+  </div>
+
+  <div class="table-wrap" id="cmp-table-wrap"></div>
+</section>
+
+<!-- ============================ TAB 4: BLUEPRINT ============================ -->
+<section id="blueprint" class="tab-panel">
+  <div class="prose">
+    <h2 class="sec"><span class="sec-num">4.1</span>嵌套分叉（$K_z \times K_a$）与步骤 4–7 实验设计蓝图</h2>
+    <p>针对《讨论稿》第五节以 <code>Qwen3.5-9B</code> + <code>R2E-Gym</code>（100–200 道难度校准题）为核心的研究方案，结合 38 篇全文核查结果，固化以下从基建体检、低成本门槛、嵌套分叉真值构建到估计器评测与等壁钟 RL 验证的完整协议。</p>
+  </div>
+
+  <div class="wide-block">
+    <div class="svg-frame">
+      <svg viewBox="0 0 1120 410" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="嵌套分叉 Kz x Ka 实验架构与步骤 4-7 决策流">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#5b5850" />
+          </marker>
+          <marker id="arr-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#1f4e79" />
+          </marker>
+        </defs>
+
+        <!-- Background panel titles -->
+        <rect x="10" y="10" width="235" height="390" rx="6" fill="#f7f6f2" stroke="#e2dfd6" />
+        <text x="127" y="34" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="13" font-weight="600" fill="#1f4e79">步骤 1–4 · 前置门槛与准入</text>
+
+        <rect x="260" y="10" width="540" height="390" rx="6" fill="#ffffff" stroke="#c4d4e4" stroke-width="1.5" />
+        <text x="530" y="34" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="13" font-weight="600" fill="#1f4e79">步骤 5 · 容器快照嵌套分叉（单决策点 Kz=4 × Ka=4）</text>
+
+        <rect x="815" y="10" width="295" height="390" rx="6" fill="#f7f6f2" stroke="#e2dfd6" />
+        <text x="962" y="34" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="13" font-weight="600" fill="#1f4e79">步骤 6–7 · 评测与等壁钟 RL</text>
+
+        <!-- Left column: Steps 1-4 -->
+        <rect x="24" y="50" width="207" height="72" rx="4" fill="#ffffff" stroke="#e2dfd6" />
+        <text x="34" y="70" font-family="-apple-system,PingFang SC,sans-serif" font-size="12" font-weight="600" fill="#1b1b1b">1. 基建 5 项硬断言</text>
+        <text x="34" y="88" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• FP32 GatedDeltaNet + 重算 KV</text>
+        <text x="34" y="104" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• 5 步 .git 清理 + Token-in-Token-out</text>
+        <text x="34" y="117" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• VLLM_BATCH_INVARIANT=1</text>
+
+        <line x1="127" y1="122" x2="127" y2="144" stroke="#5b5850" stroke-width="1.3" marker-end="url(#arr)" />
+
+        <rect x="24" y="146" width="207" height="74" rx="4" fill="#ffffff" stroke="#e2dfd6" />
+        <text x="34" y="166" font-family="-apple-system,PingFang SC,sans-serif" font-size="12" font-weight="600" fill="#1b1b1b">3. R2E-Gym 双筛建池</text>
+        <text x="34" y="184" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• 3 遍金补丁重跑（0 flaky）</text>
+        <text x="34" y="200" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• pass@8 留 2–6 胜（100–200 题）</text>
+        <text x="34" y="214" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• 10 Python 仓复用镜像 &lt; 120 GB</text>
+
+        <line x1="127" y1="220" x2="127" y2="242" stroke="#5b5850" stroke-width="1.3" marker-end="url(#arr)" />
+
+        <rect x="24" y="244" width="207" height="86" rx="4" fill="#fbf6ea" stroke="#e6d4ad" />
+        <text x="34" y="264" font-family="-apple-system,PingFang SC,sans-serif" font-size="12" font-weight="600" fill="#8a5a00">4. 零训练 3 项低成本门槛</text>
+        <text x="34" y="282" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• 4A: 动作熵 H(A) 与 token 占比</text>
+        <text x="34" y="298" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• 4B: CoT / Act 双区温度干预</text>
+        <text x="34" y="314" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• 4C: 删 CoT 重采 K=4 动作恢复率</text>
+
+        <rect x="24" y="344" width="207" height="44" rx="4" fill="#ffffff" stroke="#e2dfd6" stroke-dasharray="4 3" />
+        <text x="34" y="362" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">若未过门槛（动作仍被 CoT 决定）：</text>
+        <text x="34" y="378" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" font-weight="600" fill="#5b3f8c">转轮级 Kz=8–16 + CoT 内高熵归因</text>
+
+        <!-- Arrow from Step 4 to Step 5 -->
+        <line x1="231" y1="286" x2="274" y2="205" stroke="#1f4e79" stroke-width="1.6" marker-end="url(#arr-acc)" />
+
+        <!-- Center panel: Nested Branching Tree -->
+        <!-- Root state box -->
+        <rect x="276" y="160" width="114" height="90" rx="5" fill="#eaf0f6" stroke="#1f4e79" stroke-width="1.4" />
+        <text x="333" y="182" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="600" fill="#1f4e79">决策点状态 s_t</text>
+        <text x="333" y="201" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#1b1b1b">轻量快照 ξ_t</text>
+        <text x="333" y="217" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#5b5850">+ 精确前缀 Token IDs</text>
+        <text x="333" y="236" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" font-weight="600" fill="#1e6b47">V(s_t) = E_z[Q(s,z)]</text>
+
+        <!-- Layer 1: Kz = 4 CoT nodes -->
+        <!-- CoT 1 -->
+        <line x1="390" y1="185" x2="438" y2="85" stroke="#1f4e79" stroke-width="1.3" marker-end="url(#arr-acc)" />
+        <rect x="440" y="60" width="112" height="48" rx="4" fill="#f6f3fa" stroke="#5b3f8c" />
+        <text x="496" y="80" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="12" font-weight="600" fill="#5b3f8c">CoT 样本 z_1</text>
+        <text x="496" y="98" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#5b5850">均值 Q(s, z_1)</text>
+
+        <!-- CoT 2 -->
+        <line x1="390" y1="198" x2="438" y2="162" stroke="#1f4e79" stroke-width="1.3" marker-end="url(#arr-acc)" />
+        <rect x="440" y="138" width="112" height="48" rx="4" fill="#f6f3fa" stroke="#5b3f8c" />
+        <text x="496" y="158" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="12" font-weight="600" fill="#5b3f8c">CoT 样本 z_2</text>
+        <text x="496" y="176" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#5b5850">均值 Q(s, z_2)</text>
+
+        <!-- CoT 3 -->
+        <line x1="390" y1="212" x2="438" y2="238" stroke="#1f4e79" stroke-width="1.3" marker-end="url(#arr-acc)" />
+        <rect x="440" y="216" width="112" height="48" rx="4" fill="#f6f3fa" stroke="#5b3f8c" />
+        <text x="496" y="236" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="12" font-weight="600" fill="#5b3f8c">CoT 样本 z_3</text>
+        <text x="496" y="254" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#5b5850">均值 Q(s, z_3)</text>
+
+        <!-- CoT 4 -->
+        <line x1="390" y1="226" x2="438" y2="314" stroke="#1f4e79" stroke-width="1.3" marker-end="url(#arr-acc)" />
+        <rect x="440" y="292" width="112" height="48" rx="4" fill="#f6f3fa" stroke="#5b3f8c" />
+        <text x="496" y="312" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="12" font-weight="600" fill="#5b3f8c">CoT 样本 z_4</text>
+        <text x="496" y="330" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#5b5850">均值 Q(s, z_4)</text>
+
+        <!-- Layer 2: Ka = 4 Actions per CoT -->
+        <!-- Under z1 -->
+        <line x1="552" y1="74" x2="596" y2="62" stroke="#5b5850" stroke-width="1.1" />
+        <line x1="552" y1="81" x2="596" y2="77" stroke="#5b5850" stroke-width="1.1" />
+        <line x1="552" y1="88" x2="596" y2="92" stroke="#5b5850" stroke-width="1.1" />
+        <line x1="552" y1="95" x2="596" y2="107" stroke="#5b5850" stroke-width="1.1" />
+        <rect x="598" y="54" width="186" height="60" rx="4" fill="#f1f8f4" stroke="#b9d6c6" />
+        <text x="691" y="72" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="11.5" font-weight="600" fill="#1e6b47">a_{1,1} … a_{1,4} → 续跑至测试</text>
+        <text x="691" y="89" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#5b5850">独立下游种子 · 保留全部 4 支</text>
+        <text x="691" y="105" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#1e6b47">组内差量度 A_act（做）</text>
+
+        <!-- Under z2 -->
+        <line x1="552" y1="152" x2="596" y2="140" stroke="#5b5850" stroke-width="1.1" />
+        <line x1="552" y1="162" x2="596" y2="162" stroke="#5b5850" stroke-width="1.1" />
+        <line x1="552" y1="172" x2="596" y2="184" stroke="#5b5850" stroke-width="1.1" />
+        <rect x="598" y="132" width="186" height="60" rx="4" fill="#f1f8f4" stroke="#b9d6c6" />
+        <text x="691" y="150" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="11.5" font-weight="600" fill="#1e6b47">a_{2,1} … a_{2,4} → 续跑至测试</text>
+        <text x="691" y="167" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#5b5850">核心 30 点再加 M_roll=2–4 续跑</text>
+        <text x="691" y="183" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#5b5850">剥离后续运气 Var(R|s,z,a)</text>
+
+        <!-- Under z3 -->
+        <line x1="552" y1="230" x2="596" y2="218" stroke="#5b5850" stroke-width="1.1" />
+        <line x1="552" y1="240" x2="596" y2="240" stroke="#5b5850" stroke-width="1.1" />
+        <line x1="552" y1="250" x2="596" y2="262" stroke="#5b5850" stroke-width="1.1" />
+        <rect x="598" y="210" width="186" height="60" rx="4" fill="#f1f8f4" stroke="#b9d6c6" />
+        <text x="691" y="228" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="11.5" font-weight="600" fill="#1e6b47">a_{3,1} … a_{3,4} → 续跑至测试</text>
+        <text x="691" y="245" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#5b5850">10% 子集重跑测 Replica Floor</text>
+        <text x="691" y="261" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#5b5850">自动捕获跨轮思考持续性</text>
+
+        <!-- Under z4 -->
+        <line x1="552" y1="306" x2="596" y2="294" stroke="#5b5850" stroke-width="1.1" />
+        <line x1="552" y1="316" x2="596" y2="316" stroke="#5b5850" stroke-width="1.1" />
+        <line x1="552" y1="326" x2="596" y2="338" stroke="#5b5850" stroke-width="1.1" />
+        <rect x="598" y="286" width="186" height="60" rx="4" fill="#f1f8f4" stroke="#b9d6c6" />
+        <text x="691" y="304" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="11.5" font-weight="600" fill="#1e6b47">a_{4,1} … a_{4,4} → 续跑至测试</text>
+        <text x="691" y="321" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#5b5850">30 留出点跑双套独立 16 续跑</text>
+        <text x="691" y="337" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#5b5850">标定 Noise Ceiling（C3 规范）</text>
+
+        <!-- Bottom note inside Step 5 -->
+        <rect x="276" y="356" width="508" height="32" rx="4" fill="#f7f6f2" stroke="#e2dfd6" />
+        <text x="530" y="376" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="11.5" fill="#1b1b1b">组间均值差量度 A_CoT（想） · 100–120 点（随机层 50% + 关键转折层 50%）· 单轨限 2 点防塌缩</text>
+
+        <!-- Arrow Step 5 to Step 6-7 -->
+        <line x1="784" y1="150" x2="828" y2="150" stroke="#1f4e79" stroke-width="1.6" marker-end="url(#arr-acc)" />
+        <line x1="784" y1="280" x2="828" y2="280" stroke="#1f4e79" stroke-width="1.6" marker-end="url(#arr-acc)" />
+
+        <!-- Right column: Steps 6 & 7 -->
+        <rect x="830" y="50" width="265" height="164" rx="4" fill="#ffffff" stroke="#e2dfd6" />
+        <text x="842" y="70" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="600" fill="#1b1b1b">6. 9 类估计器 × 6 维反事实横评</text>
+        <text x="842" y="90" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• 对标：GRPO / ActFocus / Progress Adv.</text>
+        <text x="842" y="106" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">  代码证据匹配 / Q̂ Critic / 思考裁判 / OPD</text>
+        <text x="842" y="124" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#a3262c" font-weight="600">• 必配阴性对照：Shuffled / Gap-Matched</text>
+        <text x="842" y="142" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• 指标：Spearman + Noise Ceiling、冲突格 F1、</text>
+        <text x="842" y="158" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">  同状态 Top-1 排序率、步位置误差、开销账本</text>
+        <text x="842" y="176" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#1e6b47">• 另加 15–20 轨双盲人工校验（替代原 E14）</text>
+        <text x="842" y="196" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">单卡 1×A800 约 1–2 周可完成步骤 1–6</text>
+
+        <rect x="830" y="230" width="265" height="158" rx="4" fill="#ffffff" stroke="#e2dfd6" />
+        <text x="842" y="250" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="600" fill="#1b1b1b">7. 小规模等壁钟 RL 与 5 臂对照</text>
+        <text x="842" y="270" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• 先按 Arctic-SWE 调过 20–50 题过拟合压测</text>
+        <text x="842" y="286" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">  (CISPO、去 std、无长度罚、lr=1e-6)</text>
+        <text x="842" y="304" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• 5 臂：强 GRPO / ActFocus+TRCA / 胜出者 /</text>
+        <text x="842" y="320" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">  Shuffled &amp; Search-Select / 双 LoRA 独立轴</text>
+        <text x="842" y="338" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#1f4e79" font-weight="600">• 固定终点 · ≥3 种子 · 超额等壁钟 · 泛化斜率</text>
+        <text x="842" y="356" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#5b5850">• 终评：SWE-Verified(483) + TB 2.1 双超时</text>
+        <text x="842" y="374" font-family="-apple-system,PingFang SC,sans-serif" font-size="11" fill="#8a5a00">完整 RL 需 4–8 卡；单卡则走冻结批受控 LoRA</text>
+      </svg>
+    </div>
+    <p class="caption">图 2　面向 <code>Qwen3.5-9B</code> + <code>R2E-Gym</code> 的端到端实验设计蓝图：融合 Arctic-SWE 基建、CRR 确定性过滤、Re-feeding 批不变核、C3 噪声上界、VinePPO 同状态排序与 Coverage/FACTOR/TRIAGE 公平性协议。</p>
+  </div>
+
+  <div class="prose">
+    <h2 class="sec"><span class="sec-num">4.2</span>嵌套分叉核心分解公式与无偏方差估计</h2>
+    <p>在由容器快照 $\xi_t$ 与 Token-in-Token-out 精确前缀共同确定的决策点 $s_t$ 上，记 $Q(s_t, z_t, a_t)$ 为固定本轮思考 $z_t$ 与动作 $a_t$ 后由策略 $\pi$ 续跑至终局测试的期望通过率：</p>
+    $$Q(s_t, z_t) = \mathbb{E}_{a \sim \pi(\cdot \mid s_t, z_t)}\big[Q(s_t, z_t, a)\big], \qquad V(s_t) = \mathbb{E}_{z \sim \pi(\cdot \mid s_t)}\big[Q(s_t, z)\big]$$
+    $$A(s_t, z_t, a_t) = \underbrace{Q(s_t, z_t) - V(s_t)}_{A_{\mathrm{CoT}}(s_t, z_t)} + \underbrace{Q(s_t, z_t, a_t) - Q(s_t, z_t)}_{A_{\mathrm{act}}(s_t, z_t, a_t)}$$
+    $$\operatorname{Var}_{z,a}\big[Q(s_t, z_t, a)\big] = \underbrace{\operatorname{Var}_z\big[Q(s_t, z)\big]}_{B\text{（想）}} + \underbrace{\mathbb{E}_z\,\operatorname{Var}_a\big[Q(s_t, z, a)\big]}_{W\text{（做）}}$$
+    <p>采用 $K_z \times K_a$ 嵌套采样（默认 $K_z = K_a = 4$）时，有限样本的无偏组内/组间方差估计量为：</p>
+    $$\hat{W} = \frac{1}{K_z}\sum_{k=1}^{K_z}\frac{1}{K_a - 1}\sum_{j=1}^{K_a}\big(R_{k,j} - \bar{R}_k\big)^2, \qquad \hat{B} = \frac{1}{K_z - 1}\sum_{k=1}^{K_z}\big(\bar{R}_k - \bar{R}\big)^2 - \frac{\hat{W}}{K_a}$$
+    <p class="note">注：保留原始 $\hat{B}$ 点估计（允许单决策点有限样本为负，跨决策点均值无偏），并以题目为一级聚类做 $10{,}000$ 次层次化 Bootstrap 报告 $95\%$ 置信区间；在核心 30 个决策点对每个 $(z_k, a_{k,j})$ 追加 $M_{\mathrm{roll}}=2\text{–}4$ 次独立后续续跑，以进一步把“动作之后的未来运气 $\operatorname{Var}(R\mid s,z,a)$”从组内动作方差 $W$ 中剥离。</p>
+
+    <div class="callout-box warn">
+      <p><b>统计学关键边界（修正《讨论稿》第五节关于共享随机数的计划）：</b>当目标是估计两个分支的<b>优势差值</b>（如对比两段 CoT 或 OG-OPD 的 <code>S vs TS</code> 配对）时，使用 Philox 层次键 <code>(episode, turn, line, pos)</code> 共享下游随机性（切忌用全局单 seed）可通过正协方差显著压低差值方差；但当目标是运行上述<b>无偏 ANOVA 全方差分解</b>时，公式中扣除项 $\hat{W}/K_a$ 严格依赖各分支续跑残差相互独立——跨分支共享下游随机性会系统性低估组内残差、扭曲“想”与“做”的方差占比。因此，<b>步骤 5 的 ANOVA 分解必须使用独立下游随机种子，并保留全部 $K_z \times K_a$ 分支（严禁 BranPO 式对比过滤）</b>。</p>
+    </div>
+  </div>
+
+  <div class="wide-block">
+    <h2 class="sec"><span class="sec-num">4.3</span>步骤 5 必填声明：69 篇综述 CA-ID Card 六要素契约</h2>
+    <div class="table-wrap">
+      <table class="booktabs">
+        <thead>
+          <tr>
+            <th style="width:210px;">CA-ID Card 声明项</th>
+            <th>本方案（Qwen3.5-9B + R2E-Gym 嵌套分叉）具体执行规范</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>1. 单位与被估量</b><br><code>Unit &amp; Estimand</code></td>
+            <td>轮内两级决策单位（CoT 段 $z_t$ 与动作段 $a_t$）；参考分布为当前策略自身条件分布 $\pi(\cdot\mid s_t)$ 与 $\pi(\cdot\mid s_t,z_t)$；被估量为 $A_{\mathrm{CoT}}$、$A_{\mathrm{act}}$ 及方差占比 $B/(B+W)$。</td>
+          </tr>
+          <tr>
+            <td><b>2. 有效状态 $z_u^-$</b><br><code>Effective State</code></td>
+            <td>轻量容器文件系统/工作树快照 ID $\xi_t$（已过 5 步 <code>.git</code> 清理断言 0 ref/remote + CNI 断网）与 Token-in-Token-out 原始前缀 token ID 序列的联合状态。</td>
+          </tr>
+          <tr>
+            <td><b>3. 干预来源与证据阶梯</b><br><code>Intervention &amp; Tier</code></td>
+            <td>最高第 1 层 <code>restored-interventional</code>（真实恢复快照并执行后续交互直至隐藏单元测试）；在 $10\%$ 子集对照 <code>VLLM_BATCH_INVARIANT=1</code> / 热缓存与冷重喂，公开报告 <b>Replica Floor</b>。</td>
+          </tr>
+          <tr>
+            <td><b>4. 下游协议 $\rho$</b><br><code>Downstream Protocol</code></td>
+            <td>冻结 <code>Qwen3.5-9B</code>（原生 thinking 开启，$T=1.0, \text{top-}p=0.95$，全链路 <code>FP32</code> GatedDeltaNet），固定剩余轮数上限与隐藏单元测试器；ANOVA 用独立种子，成对/OPD 诊断单列 Philox 共享种子结果。</td>
+          </tr>
+          <tr>
+            <td><b>5. 支撑集与不确定性</b><br><code>Support &amp; Uncertainty</code></td>
+            <td>从三遍确定性过滤 + <code>pass@8</code> 成功 $2\text{–}6$ 次的 100–200 题池中分层抽 100–120 点（50% 无偏随机层 + 50% 关键转折层，单轨限 2 点）；报告无方差组剔除率、折半 Spearman 信度、$S/(S+2N)$、30 留出点双独立参考 Noise Ceiling 与题目聚类 Bootstrap $95\%$ CI。</td>
+          </tr>
+          <tr>
+            <td><b>6. 优化接口</b><br><code>Optimization Interface</code></td>
+            <td>步骤 5–6 纯离线评测；步骤 7 通过保号幅值重加权或混合优势（叠加全局基线 + 批级 RMS 归一化）接入 CISPO/GRPO，配套 5 臂对照与等壁钟 / 超额等壁钟对比。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="wide-block">
+    <h2 class="sec"><span class="sec-num">4.4</span>步骤 6 候选估计器矩阵与必报 6 项评测指标</h2>
+    <div class="table-wrap">
+      <table class="booktabs">
+        <thead>
+          <tr>
+            <th style="width:200px;">候选估计器类别</th>
+            <th>具体配置（严格防“稻草人基线”）</th>
+            <th style="width:240px;">借鉴来源与防踩坑要点</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>1. GRPO 均匀分配</b></td>
+            <td>组内终局回报均值差广播至整轨全部 token</td>
+            <td>基准零线（对应 <code>Coverage</code> 均匀臂）</td>
+          </tr>
+          <tr class="em">
+            <td><b>2. 强制阴性对照族</b></td>
+            <td><code>Random-Turn / Shuffled</code>（等集中度随机轮置换）、<code>Surprisal-Matched</code>（匹配惊奇度分桶）、<code>Gap-Matched</code>（范数匹配缩放）</td>
+            <td><code>Coverage</code>、<code>FACTOR</code>、<code>ConCal</code>、<code>OG-OPD</code>：任何声称有效的方法必须全部胜过这三项对照</td>
+          </tr>
+          <tr>
+            <td><b>3. 免费内部信号</b></td>
+            <td>第一轮 $I_t$、$\bar{H}^C_{\mathrm{head}}$、<code>ActFocus</code> 冻结 $\pi_{\mathrm{ref}}$ 自由能 $E_t$</td>
+            <td><code>ActFocus</code>：验证是否仅靠参考能量区分动作段就已捕捉主要信号</td>
+          </tr>
+          <tr>
+            <td><b>4. Progress Advantage</b></td>
+            <td><code>Qwen3.5-9B / 9B-Base</code>（单卡 bf16 约 36 GB）+ <code>TIES</code> 中继参考 + 步骤 7 自训 RL 差值</td>
+            <td><code>Progress Advantage</code>：<b>固定单一先验聚合（严禁 25 选 1）</b>，且分别在 CoT 段与 Action 段独立评估</td>
+          </tr>
+          <tr>
+            <td><b>5. 同状态 / 同证据匹配</b></td>
+            <td><code>GiGPO</code> 观测相似度匹配 + 改造版 <code>Self-Credit</code> 代码证据匹配（编辑文件路径+行号 / 测试名）</td>
+            <td><code>GiGPO</code>、<code>Self-Credit</code>：必须同步报告有效组覆盖率（$|G^S|\ge 2$）与误合并率</td>
+          </tr>
+          <tr>
+            <td><b>6. Critic / 轻量 TD</b></td>
+            <td>独立状态价值 $V(s)$ 与同状态可排序的动作价值 $\hat{Q}(s,z,a)$（stop-grad MLP 价值头）</td>
+            <td><code>C3</code>、<code>VinePPO</code>、<code>FACTOR</code>：指出 $V(s)$ 对同状态排序零贡献，必须评测 $\hat{Q}$ 才公平</td>
+          </tr>
+          <tr>
+            <td><b>7. 结构化 LLM 裁判</b></td>
+            <td><code>Qwen3-8B-thinking</code> + 前后 5 步局部窗口 + 隐藏终局结果 + 输出证据串（并单跑 <code>no-think</code> 反例）</td>
+            <td><code>TRIAGE</code>、<code>R2E-Gym</code>：按 <code>R-in-success</code> / <code>E-in-failure</code> 冲突格报 F1，检查是否受 CoT 乐观语气欺骗</td>
+          </tr>
+          <tr>
+            <td><b>8. OPD 教师差距</b></td>
+            <td>同权重即时 pytest 报错自教师 $\Delta_{t,j}$ + 30–50 点小规模 <code>OG-OPD</code> 3 分支（<code>S/TS/TT</code> × 5 共享种子）</td>
+            <td><code>OG-OPD</code>、<code>FACTOR</code>、<code>PAV</code>：实测净救援率（救援 − 伤害）与学生可接力率</td>
+          </tr>
+          <tr>
+            <td><b>9. 双盲人工校验子集</b></td>
+            <td>15–20 条 R2E-Gym 轨迹（约 120–150 步），2 盲标员 + 1 仲裁员</td>
+            <td><code>TRIAGE</code>：替代原 SW/TWX 的 E14，构建人类语义 × 容器反事实双重互证</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">表 3　步骤 6 必报 6 项指标：① 与独立 16-MC 真值的 Spearman 秩相关（并列标出 C3 双独立参考 Noise Ceiling）及 $95\%$ CI；② 整体符号一致率 + TRIAGE 冲突格 F1；③ VinePPO 同状态 Top-1 候选排序准确率（分测选 $z$ 与同 $z$ 内选 $a$）；④ ConCal Gap-Matched MSE 拆解；⑤ 按归一化步位置 $t/T$ 误差曲线；⑥ 单点前向次数、墙钟与显存开销账本。</p>
+  </div>
+</section>
+
+<!-- ============================ TAB 5: 7 DECISIONS ============================ -->
+<section id="decisions" class="tab-panel">
+  <div class="prose">
+    <h2 class="sec"><span class="sec-num">5.1</span>对《讨论稿》§七 全部 7 项待决定问题的直接实证回答</h2>
+    <p class="note">每条建议均直接绑定全文核查证据；点击卡片底部的文献标签，可直接跳转至 Tab 2 打开对应论文的 8 维详细实验协议。</p>
+  </div>
+  <div id="decisions-container"></div>
+</section>
+</main>
+
+<script>
+const FAMILY_META = {
+  A: { label: "A · 分叉与重放", full: "A · 分叉采样、状态快照与重放保真", tag: "acc", color: "#1f4e79" },
+  B: { label: "B · 定位与树展开", full: "B · 步骤定位、同状态分组与树展开", tag: "vio", color: "#5b3f8c" },
+  C: { label: "C · CoT与OPD", full: "C · CoT-Action、两阶段与 OPD/进度", tag: "pos", color: "#1e6b47" },
+  D: { label: "D · 基建与裁判", full: "D · Coding 基建、综述与裁判规则", tag: "warn", color: "#8a5a00" },
+};
+
+const PARITY_META = {
+  wallclock: { label: "等墙钟 / 等 GPUh（强）", tag: "pos", color: "#1e6b47" },
+  rollout:   { label: "等 Rollout / Token（中）", tag: "acc", color: "#1f4e79" },
+  step:      { label: "仅 Iso-Step（弱）", tag: "warn", color: "#8a5a00" },
+  eval:      { label: "纯诊断 / 建库 / 评测", tag: "", color: "#8d897f" },
+};
+
+const RESTORE_META = {
+  sandbox:   "容器 / 轻沙盒快照",
+  sim:       "模拟器状态 / 种子重放",
+  exact_tok: "Token-in-Token-out / 热缓存",
+  text:      "纯文本前缀重喂",
+  none:      "无中途分叉",
+};
+
+const PAPERS = [
+  // ===================== FAMILY A (7) =====================
+  {
+    id: "crr", num: 1, name: "CRR", year: "2026-09", venue: "NeurIPS 2026", arxiv: "arXiv:2609.33875v4",
+    evidence: "全文/附录核实", family: "A", parity: "wallclock", restore: "sandbox",
+    isCoding: true, hasRandomCtrl: true, hasQwen3: true, withdrawn: false,
+    expType: "在线 RL 算法对比 + 系统开销与机制审计",
+    modelShort: "Qwen3-14B (LoRA 128) · 关思考 · 无 SFT",
+    modelDetail: "Qwen3-14B（LoRA rank 128, alpha 256），无额外 SFT 预热；附录 E 明确训练与评测全程关闭 thinking 模式，由 token 级 JSON-grammar 解码器硬约束输出单个工具调用（5 工具）。",
+    poolDetail: "训：SWE-Gym（2,272）+ SWE-rebench（1,200），共 3,472 题；不做 pass@k 筛难度，但执行严格三遍标准补丁重跑确定性过滤（弃 6.8% / 9.4% flaky 题）。评：SWE-bench Verified（500）、Live（1,565）、rebench（860），上限 $H=50$ 轮。",
+    branchShort: "熵+类型选 top-$k=4$ 步，$K=1$；SWE-MiniSandbox 快照",
+    branchDetail: "每轨选至多 $k=4$ 步（熵 $>0.4$ 且按动作类型加权：edit 1.0、shell 0.75、test 0.25、view 0），以升温 $T_{\\mathrm{cf}}=0.7$ 拒采 $K=1$ 替代动作续跑至终局测试，用 $R(\\tau)-R(\\tilde{\\tau}_t)$ 替换选中步优势。不拆 CoT（无 CoT）；通过轻量无容器沙盒 SWE-MiniSandbox + 冻结依赖镜像 + HTTP 录播层恢复状态，不共享下游随机种子。",
+    diagDetail: "300 轨 $K=4$ 探针测 top-$10\\%$ 优势富集度（Entropy+Type $28\\%$ vs Random $10\\%$）；prefix-bucket 协方差与优势 SNR（GRPO 的 $2.1\\times$）；重放噪声注入（$5\\%/10\\%$）；4 类失败归因（局部修与回归大幅下降，测试作弊仍维持约 $4\\%$）。",
+    parityShort: "40.125h 严格全计费等墙钟 + Search-Select 对照",
+    parityDetail: "双口径：① 24,000 轨主表（明示非等算力）；② 40.125h 同节点严格等墙钟（不扣 $58\\%$ 异步重叠，延长 GRPO 至 37,824 轨得 $36.7\\%$ vs CRR $41.7\\%$，净胜 $+5.0\\text{ pp}$）；③ 48 H100h 等预算 Search-Select-GRPO 对照（$34.4\\%$ vs CRR $36.2\\%$）；④ 含 Random / Stride 选点对照与快照成本 $m\\in\\{1,2,4\\}$ 扫描。",
+    hwShort: "8× H100-80GB · CRR 321h vs GRPO 188h",
+    hwDetail: "单节点 8× NVIDIA H100-80GB；单 64 轨微批 CRR $170.9\\text{ s}$（快照物化占 $36.2\\text{ s}$）vs GRPO $100.1\\text{ s}$（$1.71\\times$）；全预算单种子 CRR 321 H100h（40.125h 墙钟）vs GRPO 188 H100h（23.5h），3 种子。",
+    negativeTakeaway: "快照成本放大 $2\\times\\text{–}4\\times$ 时等墙钟优势即归零倒挂（$m=4$ 反亏 $-0.2\\text{ pp}$）；未验证长 CoT 膨胀成本。直接启示：步骤 1 必先压测轻量快照延迟并前置三遍确定性过滤，在线 RL 必配 Search-Select 对照。",
+  },
+  {
+    id: "twice", num: 2, name: "TWICE", year: "2026-10", venue: "已撤稿 (v2)", arxiv: "arXiv:2610.31544v1",
+    evidence: "全文/附录核实·v2已撤稿", family: "A", parity: "rollout", restore: "exact_tok",
+    isCoding: false, hasRandomCtrl: true, hasQwen3: true, withdrawn: true,
+    expType: "合成 MDP + 400 题离线审计 + 在线 RL（注意 v2 已撤稿）",
+    modelShort: "Qwen2.5-3B/7B 等 · ReAct · 无 SFT（撤稿预警）",
+    modelDetail: "主实验 Qwen2.5-3B/7B-Instruct，扩展覆盖 1.5B/14B、Qwen3-4B-Instruct-2507 与 Llama-3.2-3B-Instruct；Search-R1 模板（&lt;think&gt;+&lt;search&gt;），无 SFT 预热。",
+    poolDetail: "训：NQ + HotpotQA（约 170K），不预筛难度，靠在线逻辑回归预测器降权全对/全错题。评：7 个 QA 基准 + ALFWorld / WebShop；主实验 $H=4$（扩展至 8），上下文 8K。",
+    branchShort: "整轮分叉 · Philox 键 (e,t,k,l,j) 共享随机性",
+    branchDetail: "明确不拆 CoT 与动作（整轮分叉）。预算上限 $\\beta=0.7$ 倍主 token，用平方根采样 + Horvitz–Thompson 逆概率加权；核心为 vLLM 自定义 logits processor（耗时增 $1.8\\%$），用 5 元 Philox 键 (episode, turn, branch, line, pos) 驱动 Gumbel-max 共享下游采样随机性。文本前缀 + prefix cache 恢复，ALF/WS 按种子重放动作。",
+    diagDetail: "合成 Search MDP 精确解验证方差比与无偏性；400 题（1,036 步）每步 128 次 MC 构建离线真值，报告符号翻转率、相对 MSE、Pearson 相关与均匀分叉/单 seed 消融。",
+    parityShort: "等 400 步 + 报 1.7× token 与总 token 轴曲线",
+    parityDetail: "固定 400 更新步，对比 GRPO（$G=5$ 与 $2\\times$ $G=10$）、GiGPO、Tree-GRPO、AT²PO、VinePPO、等预算独立 CRR；单列相对总 token（$1.70\\times$）与单步耗时，并给总生成 token 轴学习曲线。",
+    hwShort: "8× H100-80GB · 3B 17h vs GRPO 11h",
+    hwDetail: "8× NVIDIA H100-80GB（bf16）；3B 400 步：TWICE 约 17h（152s/step）vs GRPO 11h（96s）vs VinePPO 29h（262s），声称全研究合计约 9,600 GPUh。",
+    negativeTakeaway: "⚠️ v2 于 2026-10-26 因作者单位信息错误被 arXiv 管理员撤稿，严禁引用其分数作 SOTA！方法学上仅可参考 Philox 层次键（优于全局单 seed）用于成对差值降方差，绝不可直接用于独立样本 ANOVA 全方差分解。",
+  },
+  {
+    id: "branpo", num: 3, name: "BranPO", year: "2026-02", venue: "arXiv", arxiv: "arXiv:2602.03719v2",
+    evidence: "全文/附录+代码核实", family: "A", parity: "wallclock", restore: "exact_tok",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "尾部重采非单调诊断 + 在线对比分支 RL",
+    modelShort: "Qwen2.5-7B / Qwen3-4B · 10K 自举 SFT · &lt;thinking&gt;",
+    modelDetail: "Qwen2.5-7B-Instruct 与 Qwen3-4B-Instruct-2507；均先用自产 Zero-GRPO 10K 正确样本做 1 epoch SFT 冷启动；刻意改用 &lt;thinking&gt; 避开 Qwen3 原生 &lt;think&gt; 控制 token 冲突。",
+    poolDetail: "三协议（无离线 pass@k 筛）：Search-R1（4 轮）、ASearcher 两阶段（4→8 轮，全 on-policy）、ALFWorld（50 轮，4 段回溯）。评：4 多跳 QA（扩至 16 轮）、GAIA（103 题 Avg@4）、ALFWorld。",
+    branchShort: "尾部逆向回溯 1–3 步 · 仅留对比分支 · Token-in-Token-out",
+    branchDetail: "初始仅 $N=4$ 轨，按题组准确率从尾步逆向回溯 1–3 步各采 $B=2$ 后缀，找到成败反转对比分支即止、丢弃同结果分支，配冗余步掩码 RSM 抑步数膨胀；不拆 CoT/Act。关键工程修补：缓存原始 token ID 做 Token-in-Token-out 消除重分词漂移，配 rollout IS 截断。",
+    diagDetail: "1,000 题尾步重采 32 次，Pass@32 比 Pass@1 高 $+10\\%\\text{–}25\\%$ 证实非单调自救能力；追踪对比分支比例、RSM 去冗余步效应与 $(B,R)$ 扫描。",
+    parityShort: "前 5 步单步墙钟对齐（429s vs GRPO 439s）",
+    parityDetail: "借缩减初始轨数（$N=4$ vs GRPO $G=8$）把反传耗时让给对比分叉，前 5 步实测单步墙钟基本持平（429s vs 439s）；无随机截断位置对照，且未报全程累计 GPU 小时。",
+    hwShort: "8 GPU（型号未披露）· 约 429s/step",
+    hwDetail: "官方脚本确认单机 8 GPU（FSDP + 异步 vLLM），GPU 型号与总时长原文未披露；前 5 步均值 429s/step。",
+    negativeTakeaway: "重大负面发现：长程 ASearcher 上 Tree-GRPO、ARPO、AEPO 全面输给调优 GRPO（Qwen3-4B LasJ 63.6–65.0 vs GRPO 68.1）。且对比过滤引入选择偏差，绝不可用于步骤 5 真值测量；Token-in-Token-out 必抄。",
+  },
+  {
+    id: "tree_grpo", num: 4, name: "Tree-GRPO", year: "2025-09", venue: "ICLR 2026", arxiv: "arXiv:2509.21240v3",
+    evidence: "全文/附录+代码核实", family: "A", parity: "rollout", restore: "text",
+    isCoding: false, hasRandomCtrl: true, hasQwen3: false, withdrawn: false,
+    expType: "在线树采样 RL + 节点粒度与双层优势消融",
+    modelShort: "Qwen2.5-1.5B~14B (Base) · 零 SFT · ReAct",
+    modelDetail: "Qwen2.5-1.5B/3B/7B/14B Base 权重（强调零 SFT 起步）与 Llama-3.2-3B-Instruct；Search-R1 ReAct 模板（&lt;think&gt;+&lt;search&gt;），屏蔽检索返回 token。",
+    poolDetail: "训：NQ（79K）、HotpotQA（90K）、Web-Agent（2.2K），无 pass@k 筛题。评：11 个单/多跳 QA 与 Web 基准；上限 3–5 次工具调用，上下文 4K–8K。",
+    branchShort: "完整步级节点 · 均匀随机选点 · 树内+树间优势",
+    branchDetail: "初始 $M=2$ 棵树，每树均匀随机挑 $N=2$ 个完整 ReAct 步节点各扩 1 支（$L=1$，共 6 叶），不拆 CoT 与动作；终局回报回传，树内优势与跨树全局优势直接相加。文本前缀重喂 + 本地 Wiki / Redis 缓存，不共享种子。",
+    diagDetail: "无离线真值；① 节点粒度消融：token/句级随机截断使多跳 EM 从步级 $36.8$ 降至 $22.2$（远低于链式 GRPO $31.8$）；② 优势消融：小预算（每树 3 叶）单用树内优势直接崩溃；③ $(M,N,L)$ 探索-利用权衡。",
+    parityShort: "按期望总预算 $M+\\frac{1}{2}MNL$ 对齐（2/4/8/16 轨）",
+    parityDetail: "按期望 token/工具预算公式对齐 4 档预算（如 $M=2,N=2,L=1$ 对齐链式 $G=4$），实测预算 4 反超链式 GRPO 预算 16；但未报告实测墙钟与总生成 token 账本。",
+    hwShort: "8 GPU（脚本确认 · 型号与总时长未披露）",
+    hwDetail: "正文未披露硬件与耗时；官方训练脚本确认为单机 8 GPU（veRL + vLLM + FSDP 全 offload）。",
+    negativeTakeaway: "彻底否定在 CoT/句内随机截断分叉（22.2 vs GRPO 31.8），有力支撑用户以完整语义边界分叉；同时警示小 $K$ 局部优势不可脱离全局基线单用，否则直接训练崩溃。",
+  },
+  {
+    id: "vineppo", num: 5, name: "VinePPO", year: "2024-10", venue: "ICML 2025", arxiv: "arXiv:2410.01679v2",
+    evidence: "全文/附录+PDF+代码", family: "A", parity: "wallclock", restore: "text",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: false, withdrawn: false,
+    expType: "价值网络深度诊断 + 无 Critic MC RL 对比",
+    modelShort: "RhoMath-1.1B / DeepSeekMath-7B · 3ep SFT · 数学 CoT",
+    modelDetail: "RhoMath-1.1B 与 DeepSeekMath-7B Base，各在数据集上 3 epochs 全参 SFT 预热，全程关闭 dropout；单轮数学 CoT，按换行/标点/等号切分为推理步（无工具）。",
+    poolDetail: "MATH（11.5K 训 / 500 测）与 GSM8K（7.1K 训 / 1,319 测），无 pass@k 筛；1K 响应上限；每检查点 16 种子评测取均值。",
+    branchShort: "每推理步边界重喂前缀采 $K=9$ 独立 MC",
+    branchDetail: "对每条训练轨迹的所有步边界把前缀重喂 vLLM，独立采 $K=9$ 续写估无偏 $\\hat{V}_{\\mathrm{MC}}$ 并算步优势；辅助续写仅估价值、绝不进策略梯度。纯文本重喂，不共享种子。",
+    diagDetail: "每步 256 次 MC 作真值（方差上限 $\\approx 0.001$）：① 揭露 EV 达 $0.7\\text{–}0.9$ 的 PPO Critic 在同状态 5 选 1 排序上近随机猜测（$20\\%$）；② $\\pm 0.05$ 容差率（$70\\%\\text{–}90\\%$）；③ 步位置 MAE 曲线；④ 泛化斜率与 KL 效率。",
+    parityShort: "等 64 ep/题 + 同硬件等墙钟（比 PPO 快 1.5–3×）",
+    parityDetail: "继承调优 PPO 全套超参纯净隔离 MC 信用；虽单步慢 $1.87\\times\\text{–}4.75\\times$，但省 Critic 显存与反传且步数大减，达 PPO 峰值墙钟反快 $1.51\\times\\text{–}3.0\\times$；未画等墙钟 GRPO 曲线。",
+    hwShort: "4× A100 (1.1B: 380s) / 8× H100 (7B: 583s)",
+    hwDetail: "1.1B 用 4× A100-80GB（380s vs PPO 80s）；7B 用 8× H100-80GB（583s vs PPO 312s，vLLM 吞吐 30K tok/s）。",
+    negativeTakeaway: "全步 $K=9$ 分叉搬到 50 轮 Coding 会算力爆炸；但其“同状态 Top-1 排序率 + 步位置误差 + 小池泛化斜率 + KL 效率”是步骤 6–7 不可省略的诊断套件。",
+  },
+  {
+    id: "c3", num: 6, name: "C3", year: "2026-03", venue: "arXiv (v4)", arxiv: "arXiv:2603.06859v4",
+    evidence: "全文/附录核实", family: "A", parity: "rollout", restore: "text",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "估计器三项统计审计 + 多智能体嵌套树 RL",
+    modelShort: "Qwen3-4B-Inst (主) / 8B (诊断) · 无 SFT · mmBERT Critic",
+    modelDetail: "Qwen3-4B-Instruct-2507（主实验）与 Qwen3-8B（诊断复核），无 SFT 预热，角色共享参数；对比基线 MAPPO 与离线 $\\hat{Q}$ Critic 采用 mmBERT-base。",
+    poolDetail: "MATH（7.5K）与 +CMATH val（8.1K）；诊断显式剔除无方差组并披露比例（$35\\%\\text{–}50\\%$）；评 MATH500 / Minerva / AMC23 / AIME 及高分饱和对照（CMATH/GSM8K）。",
+    branchShort: "2-agent Reasoner→Actor 2×4 嵌套树（与 CoT→Act 同构）",
+    branchDetail: "6 种工作流（$K=2\\text{–}10$）；在 2-agent 上把 $B=8$ 终局预算织成 $n_1=2$ Reasoner × $n_2=4$ Actor 嵌套树，共享前缀反而省 $32\\%\\text{–}40\\%$ 训练 token！用加权 LOO 无 std 优势；纯文本 Recorded 态模板序列化重放，不共享种子。",
+    diagDetail: "① 43 组配置校验方差定律（比值 $0.90\\text{–}1.07$）；② 折半 Spearman 信度与 $S/(S+2N)$（揭示 10-agent 开头信号 $S$ 塌缩致信度跌至 $0.01$）；③ 独立 16 续写真值 + 第二套独立 16 续写噪声上界（Noise Ceiling $=0.73$，4 续写 C3 达 $0.69$ vs $4\\times$ 数据 $\\hat{Q}$ critic 上界 $0.45$）；④ Prop. 1 量化删角色偏移。",
+    parityShort: "严格等终局预算 $B=8$ + 总训练 token 账本（省 32–40%）",
+    parityDetail: "对比 MAPPO 与 MAGRPO，严格固定每题 $B=8$ 终局 rollout 与 256 messages/step，报告精确总训练 token（120M–703M）、5 种子 Holm 校正配对 $t$ 检验。",
+    hwShort: "8× A800-80GB (主) / 4× A100-80GB (长生成)",
+    hwDetail: "主设置单机 8× A800-80GB PCIe，长生成用 4× A100-80GB；精准报告总 token（省 $32\\%\\text{–}40\\%$），具体小时数未披露。",
+    negativeTakeaway: "MAGRPO 在 2K 长生成第 250 步后从 $89.0\\%$ 崩盘至 $1.9\\%$；深链开头步真实信号 $S$ 极小。直接提供步骤 5–6 核心评测范本：2×4 嵌套同构、折半信度、双独立参考 Noise Ceiling 与区分 $V(s)$ vs $\\hat{Q}(s,z,a)$。",
+  },
+  {
+    id: "refeeding", num: 7, name: "Re-feeding Is Not Replaying", year: "2026-06", venue: "arXiv", arxiv: "arXiv:2606.15621v1",
+    evidence: "全文+官方仓库核实", family: "A", parity: "eval", restore: "exact_tok",
+    isCoding: false, hasRandomCtrl: true, hasQwen3: false, withdrawn: false,
+    expType: "纯测量方法学与推理数值重放保真度审计（无 RL）",
+    modelShort: "Qwen2.5-7B-Inst / SimpleRL-Zoo-7B / Phi-4-mini",
+    modelDetail: "3 模型跨 2 架构族（含 1 个 GRPO 训过检查点），统一运行于原版 vLLM 0.22.1（bf16 + prefix caching），对照开启 VLLM_BATCH_INVARIANT=1。",
+    poolDetail: "GSM8K 测试集 40 题（前 20 题 + 20 道主干混合难度筛选题）；书面预注册筛选 3,829 个低边际（$\\Delta\\text{lp}<1.0$）且邻近 16-tok KV 块边界的 pivot。",
+    branchShort: "三通道同种子：热缓存 Pass 1 vs 复现地板 Pass 2 vs 冷重喂 Pass 3",
+    branchDetail: "每个 pivot 取采样词与次优词各采 $K\\in\\{1,4,8,16\\}$ 续写，三通道共享确定性哈希种子：Pass 1 校验 num_cached_tokens $100\\%$ 命中；Pass 2 同态重跑测 Replica Floor；Pass 3 清缓存冷重喂 + 32-tok 贪婪探针。",
+    diagDetail: "冷重喂带来 $+13.8\\text{–}27.8\\text{ pp}$ 超额符号分歧，使 $|\\hat{A}_t|\\ge 0.5$ 选点 Jaccard 跌至 $0.34\\text{–}0.90$；常规 vLLM 热复现地板亦达 $9.1\\%\\text{–}23.0\\%$；但均值偏移近零（$-0.011$）。开启 VLLM_BATCH_INVARIANT=1 后全通道分歧精确归零（$0.0\\%$，Jaccard $=1.00$）。",
+    parityShort: "三通道同批负载对齐 + 治疗无关合格集复核",
+    parityDetail: "无 RL 训练；三通道比特级同请求批，报告题目聚类配对 $t$ 统计量及更严格的治疗无关合格集结果。",
+    hwShort: "1× A100-80GB · 全部两轮实验 < 10 美元",
+    hwDetail: "单卡 NVIDIA A100 SXM 80GB，全部两轮实验总租卡费低于 10 美元，原始数据全公开。",
+    negativeTakeaway: "跨样本平均量相对稳健，但单点筛选关键步受损严重且常规引擎自带 9–23% 复现底噪。直接行动：步骤 5 默认开 VLLM_BATCH_INVARIANT=1，并跑 $10\\%$ 子集实测 Replica Floor。",
+  },
+
+  // ===================== FAMILY B (9) =====================
+  {
+    id: "coverage", num: 8, name: "Coverage, Not Targeting", year: "2026-09", venue: "arXiv", arxiv: "arXiv:2609.02417",
+    evidence: "全文/附录核实", family: "B", parity: "rollout", restore: "none",
+    isCoding: true, hasRandomCtrl: true, hasQwen3: true, withdrawn: false,
+    expType: "机理诊断 + 冻结共享 Rollout 单步隔离 RL + 合成相变",
+    modelShort: "Qwen3-4B/8B/14B · Llama-3.1/3.3 · ToolACE-2-8B · 无 SFT",
+    modelDetail: "跨 6 个模型与 2 大家族，无 SFT 预热，直接 LoRA（rank=16）GRPO；原生 Tool-Call（用户模拟器关 thinking）。",
+    poolDetail: "τ²-retail 纯 DB 状态验证题（训 8×6，评 19/20 题×4）；BFCL V3 按模型特定非退化方差筛题（训 8×4，评 20 题×4），8K 上下文。另源码审计 SWE-bench / WebArena / OSWorld。",
+    branchShort: "不分叉 · 单步冻结共享 Rollout 隔离 + 7 臂宽度扫描",
+    branchDetail: "刻意仅做 1 次策略更新（2 epochs，饱和梯度裁剪 $1.0$，锁总信用 $\\sum_t|a_t|=|A_i|$）消除多步探索分布混杂；对比 Binary / Uniform / Per-turn（按 DB 进度分配）/ Shuffled（等集中度随机轮置换）/ Reward-to-go 与 7 臂宽度扫描。",
+    diagDetail: "测得 τ² 验证密度 $V_d\\approx 0.15$、BFCL $V_d\\approx 0.4$，源码证 SWE/OSWorld 解析满足 $k=1, V_d\\ll 0.8$；合成 MDP 测得相变界 $V_d^*\\approx 0.81$；附录 B 实测 19–20 题×4 轨跨批重评漂移达 $\\pm 5\\text{–}15\\text{ pp}$。",
+    parityShort: "同冻结批 + 同总信用 + 同步长 + 同批配对评测",
+    parityDetail: "极高控制精度：同批冻结轨迹、同更新幅值、同评测会话配对比较，并加 $2\\times$ LR 剂量对照与 20,000 次层次 Bootstrap / Wilcoxon 检验。",
+    hwShort: "单卡 H100/H20 (96GB) 或 RTX PRO 6000 (96GB)",
+    hwDetail: "每条 (arm, seed) 链路可放进单张 94–96 GB 显存 GPU；具体单次小时数未披露。",
+    negativeTakeaway: "低验证密度下把信用集中到进展步与集中到随机步同样有害（均显著差于 Uniform）；4B 模型易跌破多步能力门槛。直接立规：必加等集中度 Shuffled 对照 + 同批配对评测；且从理论层面证实 SWE 必须靠反事实分叉把 $V_d$ 抬向 1。",
+  },
+  {
+    id: "gigpo", num: 9, name: "GiGPO", year: "2025-05", venue: "NeurIPS 2025", arxiv: "arXiv:2505.10978v3",
+    evidence: "全文/附录核实", family: "B", parity: "rollout", restore: "none",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: false, withdrawn: false,
+    expType: "在线同状态分组 RL 对比 + 步组规模演化分析",
+    modelShort: "Qwen2.5-1.5B/3B/7B-Inst · VL-3B · 无 SFT",
+    modelDetail: "Qwen2.5-1.5B/3B/7B-Instruct 与 VL-3B，零 SFT 起步；&lt;think&gt;+&lt;action&gt; 模板，ALFWorld/WebShop 采用 verl-agent step-wise 仅留最近 2 步历史，QA 留全历史。",
+    poolDetail: "ALFWorld（3,827，$T=50$）、WebShop（12K，$T=15$）、Search-QA（NQ+HotpotQA 训，7 库测，$T=4$）、Sokoban；无 pass@k 筛题。",
+    branchShort: "零分叉 · 同初态 $N=8$ 轨事后按锚点状态哈希分组",
+    branchDetail: "同初态独立采 $N=8$（QA 5）条整轨，事后跨轨跨步按相同环境观测哈希（QA 用最长公共子序列相似度 $>0.9$）聚入步组算相对优势 $A^S$，与回合优势相加 $A^E+\\omega A^S$（默认 $\\omega=1$），整步共享不拆 CoT/Act。",
+    diagDetail: "无离线真值；追踪步组大小演化（ALFWorld 全程 $>65\\%$ 发生跨轨重合）；消融 w/ std vs w/o std 与 $\\omega\\in[0,1.4]$ 扫描。",
+    parityShort: "严格 Iso-Rollout + Iso-Step + 同超参（3 种子）",
+    parityDetail: "所有组方法共享 128 并行环境（PPO 用 128 独立环境），完全一致学习率、温度、KL 与 mini-batch，150/200 步，3 种子均值±标准差。",
+    hwShort: "2–8× H100 · 分组耗时仅 0.54s (<0.002%)",
+    hwDetail: "ALF/WS 用 2–4× H100，QA 用 4–8× H100；ALF 1.5B 单步 362.83s 中，哈希分组+步优势仅占 0.54s，零额外显存。",
+    negativeTakeaway: "高难任务除组 std 放大梯度致不稳（w/o std 更优）；$\\omega>1.2$ 反退化回 GRPO；且强依赖短历史离散状态重合，Coding 连续文件系统中须同时测近似匹配覆盖率与误合并率。",
+  },
+  {
+    id: "concal", num: 10, name: "ConCal", year: "2026-10", venue: "arXiv", arxiv: "arXiv:2610.37195",
+    evidence: "全文/附录核实", family: "B", parity: "rollout", restore: "none",
+    isCoding: false, hasRandomCtrl: true, hasQwen3: false, withdrawn: false,
+    expType: "离线 4v4 折半估值诊断 + 在线续写复用 RL",
+    modelShort: "Qwen2.5-1.5B-Inst · 近 2 步历史模板 · 无 SFT",
+    modelDetail: "Qwen2.5-1.5B-Instruct（全参微调，verl-agent），无 SFT 预热，沿用 GiGPO 近 2 步历史模板（&lt;think&gt;+&lt;action&gt;）。",
+    poolDetail: "ALFWorld（3,553 训 / 140 seen 测，$T=50$）与 WebShop 1K 商品（500 测，$T=15$）；无 pass@k 筛；按 GraphGPO 口径取最后 3 个检查点验证最优者报 3 次运行均值。",
+    branchShort: "零分叉 · 入边转移递归部分池化 + 批级 RMS 归一化",
+    branchDetail: "批内 16×8 轨按入边四元组 $(x,s_{t-1},a_{t-1},s_t)$ 匹配访问，做深度 $H$ 递归部分收缩校准动作价值（保留个体差不完全池化），用批级 RMS 替代组内 std 归一化；不拆 CoT/Act。",
+    diagDetail: "① 信用冲突率；② 30 个冻结批 4v4 折半留出参考诊断（MSE 降 $34.3\\% / 16.8\\%$，排序一致率升至 $61.2\\% / 81.8\\%$）；③ Gap-matched 范数匹配对照（证明 MSE 降幅大头来自动作幅度收缩）；④ 5 分箱保真图揭露组内 std 抹平强弱步差距。",
+    parityShort: "严格 Iso-Rollout + Iso-Step（16×8 轨，150 步，3 种子）",
+    parityDetail: "消融 4 变体同库严格同配置自跑（150 步，16×8 轨）；表 1 部分外部基线引用前人结果。",
+    hwShort: "4× H100-80GB · 校准仅 0.0394s/batch",
+    hwDetail: "4× NVIDIA H100-80GB；单批 Rollout 108.85s + 更新 19.00s，匹配+递归校准仅耗时 0.0394s。",
+    negativeTakeaway: "两项深刻启发：① 步骤 6 报 MSE 必配 Gap-matched 对照，拆开“方差收缩”与“排序纠偏”；② 局部步组切勿除以组内 std，改用批级 RMS 或去 std。",
+  },
+  {
+    id: "patr", num: 11, name: "PaTR", year: "2026-07", venue: "arXiv", arxiv: "arXiv:2607.15610",
+    evidence: "全文/附录核实", family: "B", parity: "step", restore: "sandbox",
+    isCoding: true, hasRandomCtrl: true, hasQwen3: true, withdrawn: false,
+    expType: "过程打分引导树展开 RL（含 SWE-Bench）",
+    modelShort: "Qwen2.5-0.5B/3B · Qwen3-4B (SWE) · 独立 7B PRM/Judge",
+    modelDetail: "FrozenLake 用 Qwen2.5-0.5B/3B-Inst；SWE 用 Qwen3-4B-Instruct-2507（rLLM + SWE-agent），配独立 vLLM 服务的 7B PRM（Skywork）或 7B Coder Judge；无 SFT。",
+    poolDetail: "FrozenLake（$T=10$）；SWE 用剔除最难题后的 R2E-Gym-Lite-with-Difficulty（具体题量未披露），评完整 SWE-Bench Verified（500 题），$T_{\\max}=50$、32K 响应。",
+    branchShort: "初始 $B_0=4$，隔 $K=13$ 步选 Top-2 扩 2 支，留早停负样本",
+    branchDetail: "每隔 $K=5/13$ 步打分，Top-$k=2$ 各扩 $M=2$ 支，低分或连错 6 次早停但保留进组作 GRPO 负样本；过程分不进奖励或梯度；不拆 CoT/Act。关键缺失：正文与附录均未披露 SWE Docker 容器分叉恢复机制。",
+    diagDetail: "无过程打分器真值评测；在 SWE-Bench Verified 500 题上做 Tree-Random 随机树对照、$(k,M,K)$ 消融与保留/丢弃早停负分支（Keep All vs Best_n）消融。",
+    parityShort: "存隐患：GRPO 组 8 vs 树初 4 动态扩，未核总步数与打分卡",
+    parityDetail: "对比 GRPO/DAPO（组 8）、ARPO、Tree-Random（初始 $B_0=4$），但未披露总环境交互步数、总生成 token 与独立 7B 打分卡算力账本。",
+    hwShort: "1 节点 A100 / H200 + 独立打分服（时长未披露）",
+    hwDetail: "FrozenLake 用 1 节点 A100（400 步）；SWE 用 1 节点 H200（300 步，BS=8）+ 独立 vLLM 7B 打分服务器，具体耗时未披露。",
+    negativeTakeaway: "丢弃早停负分支掉 $1.4\\text{–}2.6\\text{ pp}$；过度集中展开（$M=3,k=1$）比 GRPO 更差（$22.0\\%$ vs $22.2\\%$）；PRM 具长度偏置；验证了过滤后 R2E-Gym 300 步可训出 $+5.0\\text{ pp}$，但务必补齐容器细节与等环境步数账本。",
+  },
+  {
+    id: "igrpo", num: 12, name: "IGRPO", year: "2026-07", venue: "arXiv (v2)", arxiv: "arXiv:2607.06223v2",
+    evidence: "全文/附录核实", family: "B", parity: "rollout", restore: "text",
+    isCoding: false, hasRandomCtrl: true, hasQwen3: false, withdrawn: false,
+    expType: "信息增益先导观测 + 变分刻画 + 软树展开 RL",
+    modelShort: "Qwen2.5-3B/7B-Inst · 无 SFT · Search-R1 模板",
+    modelDetail: "Qwen2.5-3B/7B-Instruct（verl-agent），无 SFT 预热，&lt;think&gt;+&lt;search&gt; 保留完整检索历史。",
+    poolDetail: "Search-R1（NQ+HotpotQA 训，7 个单/多跳 QA 测 EM，本地 E5 top-3），$T_{\\max}=4$，4K/512 上限；无 pass@k 筛。",
+    branchShort: "按标准答案似然信息增益 softmax 选 $B_i=5$ 节点展开",
+    branchDetail: "用训练题标准答案的 teacher-forcing 似然增量算节点值，每层按 softmax 采 $B_i=5$ 节点展开（单节点限扩 2 次）；被截断未完叶节点赋缩放答案似然分；纯轨迹级 GRPO 不拆 CoT/Act；纯文本前缀拼接。",
+    diagDetail: "先导累积 IG 曲线；温度 $\\gamma\\in\\{0,1,5\\}$ 扫描（$\\gamma=0$ 为随机树 $35.5\\%$ vs 默认 $39.9\\%$）；关键消融 Table 5：截断叶若给 0 分，3B 均分直接跌至 $36.9\\%$（损失 $3.0\\text{ pp}$，退回 GiGPO $37.0\\%$）。",
+    parityShort: "控同层预算 $B_i=5$ vs $N=5$，但墙钟慢 +20.2% 且含答案塑形",
+    parityDetail: "对比 IGPO、Tree-GRPO、GiGPO，另做缩减预算 $B_i=4$ vs $N=6$ 对照；但每步多跑答案似然前向（+20.2% 耗时）且截断叶引入特权答案奖励塑形。",
+    hwShort: "4×/8× H20 · 200 步 · 443.3s/step（+20.2%）",
+    hwDetail: "3B 用 4× H20、7B 用 8× H20，200 步；单步 443.3s 比 IGPO（368.9s）多 74.4s（其中 IG 前向占 40.3s）。",
+    negativeTakeaway: "依赖唯一标准文本答案，无法直接迁移至多解代码补丁；Table 5 警示树方法必须单列“截断给 0”消融，剥离采样增益与过程塑形增益。",
+  },
+  {
+    id: "arpo", num: 13, name: "ARPO", year: "2025-07", venue: "ICLR 2026", arxiv: "arXiv:2507.19849",
+    evidence: "全文/附录+代码核实", family: "B", parity: "rollout", restore: "text",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "工具返回熵先导诊断 + 熵引导分叉 RL",
+    modelShort: "Qwen2.5/Llama3.1/Qwen3-8B,14B · 54.8K SFT 冷启动",
+    modelDetail: "全部采用 54.8K 样本冷启动 SFT + RL 两阶段；涵盖 Qwen2.5-3B/7B、Llama3.1-8B 与深搜 Qwen3-8B/14B；多标签 &lt;think&gt;+&lt;search&gt;/&lt;python&gt;。",
+    poolDetail: "深度推理 10K（Tool-Star，4K 响应）+ 深度搜索 1K（8K 响应），无额外 pass@k 筛；评 13 个数学/QA/深搜基准。",
+    branchShort: "预算 $M=16$（初 $N=8$），工具返回熵升触发 $Z=2$ 分叉",
+    branchDetail: "先采 $N=8$ 全局轨，每次工具返回后测相对熵增 $\\Delta H_t$ 超阈值即复制前缀分叉 $Z=2$；默认用隐式 Soft GRPO（实测优于显式 Hard 平均），不拆 CoT/Act；纯文本前缀续写。",
+    diagDetail: "逐位置熵图发现工具返回后前 10–50 tok 熵显著飙升（搜索 > Python）；Hard vs Soft 曲线；熵权重/$N$/$M$ 缩放；Browser Agent 规模消融（14B 换 QwQ-32B Browser 使 HLE 从 $10.0$ 升至 $32.3$）。",
+    parityShort: "控总轨迹数 $M=16$（训练工具调用反比 GRPO 减半）",
+    parityDetail: "同 SFT 起点、同批大小 128、同 $M=16$ 与同 epoch 对比 GRPO / REINFORCE++ / DAPO；共享前缀使工具调用仅约 GRPO 一半；无随机分叉位置对照。",
+    hwShort: "8× H800 (7B/8B) · 16× H800 (14B)（时长未披露）",
+    hwDetail: "8× 或 16× NVIDIA H800（推理 2 epoch / 深搜 5 epoch）；具体总墙钟小时数未披露。",
+    negativeTakeaway: "DAPO 在多轮工具任务上反低于基础 GRPO；熵权重过高（1.0）降分；工具返回后前 10–50 tok 对应 Coding 报错后 CoT 开头，是高价值分叉位，但必须结合 AEPO 防止连续高熵塌缩。",
+  },
+  {
+    id: "aepo", num: 14, name: "AEPO", year: "2025-10", venue: "WWW 2026 Oral", arxiv: "arXiv:2510.14545",
+    evidence: "全文/附录+代码核实", family: "B", parity: "rollout", restore: "text",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "ARPO 失效机理诊断 + 熵平衡 Rollout 与裁剪 RL",
+    modelShort: "Qwen2.5-7B / Llama3.1-8B / Qwen3-8B,14B · 同 ARPO SFT",
+    modelDetail: "沿用 ARPO 同套基座模型、54.8K 冷启动 SFT 与多标签工具格式（20K 上下文）。",
+    poolDetail: "同 ARPO（10K 推理 + 1K 深搜，无额外过滤），评测扩至 14 基准（新增 FRAMES）。",
+    branchShort: "试采 1 轨动态定 $m$ · 连续高熵惩罚 $(1-0.2l)$ · stop-grad 裁剪",
+    branchDetail: "先试采 1 轨比较根熵与工具均熵动态分配全局数 $m$；对连续高熵步 $l$ 施线性惩罚 $(1-0.2l)$ 抑单轨吞噬分叉；上界裁剪加 stop-grad 护高熵正梯度 + 熵感知优势加权；纯文本前缀续写。",
+    diagDetail: "核心失效诊断：ARPO 中连续高熵轮占 $56.5\\%$，导致 $93.4\\%$ 分叉全部塌缩到 1–3 条轨；首步被裁剪高熵词定位；7.6K 轨 BGE-M3 + DBSCAN 多样性聚类（62 簇 vs ARPO 54 簇）。",
+    parityShort: "控总预算 $k=16$（工具调用低于 GRPO 与 ARPO）",
+    parityDetail: "同超参对齐 7 类基线（GRPO、REINFORCE++、DAPO、GPPO、CISPO、GiGPO、ARPO），工具调用更少；无随机分叉对照。",
+    hwShort: "16× H800（开源另供 8 卡 · 总小时未披露）",
+    hwDetail: "论文实验全用 16× NVIDIA H800（推理 2 epoch / 深搜 5 epoch），未披露具体墙钟时长。",
+    negativeTakeaway: "GPPO/CISPO 在 Llama3.1-8B 上无收益且易熵崩塌；朴素高熵选点必然将 93.4% 预算塌缩进连续报错的 1–3 条烂轨迹——步骤 5 抽点必须设单轨上限（如每轨限 2 点）。",
+  },
+  {
+    id: "at2po", num: 15, name: "AT²PO", year: "2026-01", venue: "arXiv", arxiv: "arXiv:2601.04767",
+    evidence: "全文/附录+代码核实", family: "B", parity: "rollout", restore: "exact_tok",
+    isCoding: false, hasRandomCtrl: true, hasQwen3: true, withdrawn: false,
+    expType: "轮熵/重分词漂移诊断 + 树展开与轮级裁剪 RL",
+    modelShort: "Qwen3-4B/8B · Qwen2.5-7B · 零 SFT · ReAct",
+    modelDetail: "Qwen3-4B、Qwen3-8B、Qwen2.5-7B，明确零 SFT 冷启动；ReAct &lt;think&gt;+&lt;search&gt; 模板，屏蔽检索结果 token。",
+    poolDetail: "HotpotQA（多跳 4 库）与 NQ（单跳 3 库），本地 21M Wiki + e5-base-v2，$T_{\\max}=6$，6K 响应；无 pass@k 筛；240 步挑验证最优。",
+    branchShort: "初 $M=10$ 链，$L=2$ 轮高轮熵分叉 + 轮级 IS + Token-in-Token-out",
+    branchDetail: "以完整轮为节点，带父子数惩罚选 Top-$K=6$ 高轮熵节点扩展；熵加权回传 $V_n$ 且直接取 $A_n=V_n$；提出轮级几何平均重要性比率 ATPO（裁剪 $3\\times 10^{-3}/4\\times 10^{-3}$）。附录 C 改用 Token-in-Token-out 消除 Qwen3 重分词漂移。",
+    diagDetail: "轮间熵异质箱线图与轮更新异质熵 $\\mathcal{H}_{\\mathrm{turn}}$；模块递进消融（ATPO 轮级裁剪独占 $+2.33\\text{ pp}$，熵分叉 $+0.58$，树信用 $+0.48$）；3×4 树优势公式交叉对比（$V_n$ $48.81\\%$ 胜 $V_n-V_{\\mathrm{parent}}$ $45.80\\%$ 与 $L_n+G_n$ $44.18\\%$）。",
+    parityShort: "期望总 token $M+LK/2=16$ 对齐，并揭露 DAPO $3\\times$ 预算",
+    parityDetail: "按期望总生成预算精确对齐 $G=16$，并诚实指出 DAPO 动态采样用了 $3\\times$ 生成批；含 Random Tree + GRPO/ATPO 递进对照。",
+    hwShort: "8× H20 · 240 步（BS=64 · 时长未披露）",
+    hwDetail: "全部实验在 8× NVIDIA H20 上训 240 步（veRL），未披露具体每步秒数。",
+    negativeTakeaway: "Tree-GRPO 在 Qwen3 上因重分词漂移直接早期崩塌，Qwen3.5 必用 Token-in-Token-out！且模块消融揭示须将“裁剪粒度收益”与“信用估计收益”分离，带全局背景的 $V_n$ 优于纯局部差分。",
+  },
+  {
+    id: "rule8020", num: 16, name: "Beyond the 80/20 Rule", year: "2025-06", venue: "NeurIPS 2025", arxiv: "arXiv:2506.01939v2",
+    evidence: "全文/附录+代码核实", family: "B", parity: "step", restore: "none",
+    isCoding: true, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "单轮长 CoT 熵分布诊断 + 温度因果干预 + RLVR",
+    modelShort: "Qwen3-8B/14B/32B-Base (零 SFT) · Llama3.1-8B (10K SFT)",
+    modelDetail: "Qwen3-8B/14B/32B-Base 直接零冷启动 RL；Llama-3.1-8B-Base 直接 RL 失败（约 $1\\%$），须先做 10K Qwen3-32B 样本 SFT 冷启动。",
+    poolDetail: "DAPO-Math-17K（在线过滤全对/全错组，3× 生成批）；评 6 数学基准（Acc@16）+ OOD LiveCodeBench；20K–30K 响应上限。",
+    branchShort: "单轮无分叉 · 损失层仅留批内 Top-20% 高熵 token",
+    branchDetail: "标准组采样（$G=16$），仅在 DAPO 损失中按批内第 80 分位阈值硬掩码保留前 $20\\%$ 高熵 token 并同步改分母，完全丢弃剩余 $80\\%$ 低熵 token 梯度。",
+    diagDetail: "超 $10^6$ tok 统计：$50.6\\%$ tok 熵 $<10^{-2}$，前 $20\\%$ 为逻辑转折词；高/低熵双区解码温度因果干预；RLVR 全程高熵位点重合率高达 $86.67\\%$；对比 Bottom-80% 导致崩溃。",
+    parityShort: "同 DAPO 超参与步数（但回复拉长 24%–61% 增采样 token）",
+    parityDetail: "单变量对比 100% vs Top-$\\rho$ vs Bottom-80% DAPO，同动态采样规则；因输出长度显著膨胀，实际生成 token 多于全量 DAPO。",
+    hwShort: "论文未披露（开源 14B 脚本用 128 GPU, BS=512）",
+    hwDetail: "正文未披露 GPU 与时长；开源 14B 复现脚本采用 16 节点 × 8 卡（128 GPU），训至 1,360 步。",
+    negativeTakeaway: "强模型规模效应：Top-20% 在 32B 涨 $+4.10$、14B 涨 $+2.99$，但在 8B 仅 $+0.53$；且低熵位点全程几乎不变，解释了纯 RL 改不动自信错误。其双区温度干预可直接作为步骤 4 零训练诊断！",
+  },
+
+  // ===================== FAMILY C (first 3 of 10) =====================
+  {
+    id: "actfocus", num: 17, name: "ActFocus", year: "2026-05", venue: "arXiv", arxiv: "arXiv:2605.14558v1",
+    evidence: "本地PDF核实", family: "C", parity: "rollout", restore: "none",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: false, withdrawn: false,
+    expType: "冻结能量诊断 + CoT/Action 差异权重在线 RL",
+    modelShort: "Qwen2.5-Inst 0.5B/1.5B/3B · &lt;think&gt;/&lt;answer&gt; · 无 SFT",
+    modelDetail: "Qwen2.5-Instruct 0.5B/1.5B/3B，无 SFT 预热，强制显式 &lt;think&gt;/&lt;answer&gt; 模板（训练前思考 token 占比高达 $84.7\\%\\text{–}97.4\\%$）。",
+    poolDetail: "Sokoban、FrozenLake（5 轮）、Sudoku 4×4（8 轮）、WebShop（9 轮）；前二确定性环境开 StarPO-S 奖励方差筛（0.25），后二随机环境关过滤（1.0）；固定终点步评测。",
+    branchShort: "零分叉 · 显式拆 CoT（常权 $\\alpha=0.1$）与 Action（参考能量）",
+    branchDetail: "复用冻结 $\\pi_{\\mathrm{ref}}$ 前向算自由能 $E_t$：思考段赋常权 $\\alpha=0.1$，动作段赋 $1+\\beta\\,\\mathrm{sigmoid}(\\tilde{E}_t)$（$\\beta=0.5$），按总权重和归一化，不改优势函数。",
+    diagDetail: "测动作/思考段能量与同 prompt 组回报方差 $\\sigma_g$ 的 Spearman $\\rho$（Sokoban 3B 动作 $+0.537$ vs 思考 $\\approx 0$）；同管线对比 4 种打分信号（参考能量 $36.7\\%$ > 参考熵 $30.9\\%$ > 策略-参考比 $29.4\\%$ > NLL $26.2\\%$）。",
+    parityShort: "严格 Iso-Step 且近似 Iso-Compute（零额外 rollout）",
+    parityDetail: "每步同样 128 轨，仅复用参考模型前向，几乎零额外开销；对比同超参 Uniform PPO/GRPO（无随机选动作 token 对照）。",
+    hwShort: "4× H100 · 200/100 步（几乎零额外开销）",
+    hwDetail: "单机 4× NVIDIA H100（RAGEN/veRL），200 步（前三环境）或 100 步（WebShop），具体总小时未披露。",
+    negativeTakeaway: "WebShop 上极端 $\\alpha=0$（完全屏蔽 CoT）直接训练崩塌（最优 $\\alpha=0.3$）；高随机 FrozenLake GRPO 反跌 $-5.7\\text{ pp}$；$\\beta=2.0$ 过聚焦倒退。步骤 7 必设 $\\alpha\\in\\{0.1,0.3\\}$ 静态降权作零额外采样强基线。",
+  },
+  {
+    id: "rice_po", num: 18, name: "RICE-PO", year: "2026-05", venue: "arXiv (v3)", arxiv: "arXiv:2605.26352v3",
+    evidence: "本地PDF核实", family: "C", parity: "step", restore: "text",
+    isCoding: false, hasRandomCtrl: true, hasQwen3: true, withdrawn: false,
+    expType: "在线高熵锚点分叉 + 双门控思考回传 RL",
+    modelShort: "DS-R1-1.5B / Qwen3-4B-Thinking / Qwen2.5-3B · 无 SFT",
+    modelDetail: "DeepSeek-R1-Distill-Qwen-1.5B、Qwen3-4B-Thinking-2507 与 Qwen2.5-3B-Instruct，无 SFT；模板要求 &lt;think&gt;（≤200 词）+&lt;summary&gt;（0–500 词）。",
+    poolDetail: "BRIGHT（4,011 训 / 1,384 测）与 BEIR（4,008 训 / 1,447 测），$T_{\\max}=5$，固定混合检索器 Diver-4B+BM25，评 NDCG@10；无 pass@k 筛。",
+    branchShort: "Top-$K=4$ 高熵摘要锚点各采 5 支 · 捆绑重采 $(z_t,s_t)$",
+    branchDetail: "每锚点固定进入思考前历史 $h_t$，连同原分支构 6 支续跑至 5 轮——但同时重采思考与摘要（未做嵌套拆解）；仅当局部摘要方差与终局残差方差双门控同时通过，才把摘要优势回传给思考段；纯文本前缀恢复。",
+    diagDetail: "无独立离线真值；端到端 RL 消融：回传策略、单门控拆解及 Random Trigger 随机锚点对照（1.5B 胜 $+1.67$ 分，附 12 任务 CDF）。",
+    parityShort: "仅 Iso-Step（未对齐每题额外 20 条分支续跑算力）",
+    parityDetail: "对比 GRPO、GiGPO、HGPO、Tree-GRPO、Diver-14B；仅按步数比较（约 100/140 步），未对齐每题 $4\\times 5=20$ 条额外续跑的采样与墙钟成本。",
+    hwShort: "GPU 型号、卡数与总耗时均未披露",
+    hwDetail: "正文与附录均未披露 GPU 型号、卡数及单步耗时（batch size 128）。",
+    negativeTakeaway: "捆绑重采 $(z_t,s_t)$ 混杂了“思考方差”与“执行方差”，局部方差大无法区分思考真有用还是纯执行随机——恰从反面凸显用户 $K_z\\times K_a$ 嵌套分叉在识别性上的不可替代性。",
+  },
+  {
+    id: "race", num: 19, name: "RACE", year: "2026-10", venue: "arXiv", arxiv: "arXiv:2610.12061v1",
+    evidence: "本地PDF核实", family: "C", parity: "step", restore: "text",
+    isCoding: true, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "跨轮思考持续性诊断 + SFT + 自适应跳过思考 RL",
+    modelShort: "Qwen3.5-9B (主) / 2B / 4B · 原生思考+工具 · DS-V4 SFT",
+    modelDetail: "直接采用用户目标基座 Qwen3.5-9B（扩展 2B/4B），原生 reasoning + native tool calling；先用 DeepSeek-V4-Pro 成功轨经 LoGiC 删冗余思考做冷启动 SFT。",
+    poolDetail: "ScienceWorld（1,819 测）、WebShop（10.5K/500）、AppWorld（147 训 / 585 测）、DeepSearch（400 测）；30 轮，65K 生成 / 262K 上下文；无 pass@k 筛。",
+    branchShort: "无在线环境分叉 · 成功轨顺序删思考似然降幅判 SKIP",
+    branchDetail: "标准 GRPO 整轨 rollout（16×8）；仅对成功轨按顺序试删思考 $r_t$，若后续全部参考动作似然降幅 $d_j\\le 0.001$ 则判 SKIP，屏蔽其思考梯度并加 &lt;/think&gt; 闭合监督损失。",
+    diagDetail: "删思考后固定动作/观察，重采 $K=4$ 动作算参考动作恢复率，验证其与似然降幅 $d_j$ 高度对应（作者坦承属动作保持代理，非回报等价真值）。",
+    parityShort: "同起点 SFT+GRPO 对比（未核算 LoGiC 前向与 RL 步数）",
+    parityDetail: "对比 Think Tool、ADaPT、Sparse ReAct、DART(Lee)、AdaptThink 及同流程 SFT+GRPO；未披露 LoGiC 顺序前向耗时、RL 总步数及无随机删段对照。",
+    hwShort: "GPU 型号、RL 步数与总耗时均未披露",
+    hwDetail: "正文与附录均未披露 GPU 配置、RL 总步数与墙钟时延（仅报推理 token 降幅）。",
+    negativeTakeaway: "对比同流程 SFT+GRPO，token 降 $32\\%\\text{–}80\\%$ 但 3/4 任务成功率微降；揭示关键现象“跨轮思考持续性”：RL 后 SW 跳过 $69.7\\%$ 轮思考但保留轮长度翻倍至 273 tok——证明单轮看似不改当前动作的 CoT 可支撑后续多轮，须靠续跑至终局的嵌套分叉捕获！",
+  },
+];
+
+PAPERS.push(
+  // ===================== FAMILY C (remaining 7 of 10) =====================
+  {
+    id: "serl", num: 20, name: "SERL", year: "2026-05", venue: "arXiv", arxiv: "arXiv:2605.19447v1",
+    evidence: "本地PDF+代码核实", family: "C", parity: "step", restore: "none",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: false, withdrawn: false,
+    expType: "5 事后反馈源 × 2 粒度全空间消融 + 在线 RL–蒸馏混合",
+    modelShort: "Qwen2.5-7B-Inst · &lt;think&gt;+&lt;action&gt; · 无 SFT",
+    modelDetail: "仅 Qwen2.5-7B-Instruct 单一规模，无 SFT 预热，&lt;think&gt;+&lt;action&gt; 显式模板（源码核查 judge_enable_thinking: false 仅用于外部裁判）。",
+    poolDetail: "ALFWorld（3,827，$T=50$）与 WebShop（1.1M 商品，$T=15$），无 pass@k 筛；论文称 150 步、温度 0.4，公开脚本默认训练温度 1.0。",
+    branchShort: "无分叉 · 事后特权上下文喂同步自教师 · 仅动作重加权 [0.8, 1.2]",
+    branchDetail: "标准 GRPO（$N=8$），构造事后上下文 $\\Phi(t)$（即时反馈、下步观察、未来后缀、成功轨等）喂每 10 步同步自教师，仅对动作 token 做有界指数重加权 $[0.8, 1.2]$，思考与格式权保持 1，前 50 步退火至 0。",
+    diagDetail: "无反事实真值；5 反馈源（9 组合）× 2 放置粒度全排列消融 + 外部裁判窗口对比（Kimi-K2.6 256K $81.8\\%$ vs 7B 32K $68.8\\%$）+ 退火动态。",
+    parityShort: "Iso-Step (150 步) · 透明报单步 +6.7% / +15.8% 耗时",
+    parityDetail: "对比 PPO、RLOO、GRPO、GiGPO、HGPO、SDPO、RLSD；附表 5 实测单步墙钟与 MFU，未做等墙钟延步对照（后由 FACTOR 补齐）；无随机权重对照。",
+    hwShort: "8× H200 · Step 272.5s (+6.7%) / Anchor 295.9s (+15.8%)",
+    hwDetail: "8× NVIDIA H200（veRL）；GRPO 255.5s/step（MFU 0.363），SERL Step 272.5s（0.291），Anchor 295.9s（0.246）。",
+    negativeTakeaway: "纯自蒸馏 SDPO 在 WebShop 直接归零（$0.0\\%$）；特权信息并非越多越好——塞入未来轨迹反将 ALFWorld 从 $90.4\\%$ 拉崩至 $76.1\\%$！Coding OPD 严禁塞整条未来轨迹，优先仅用即时报错反馈。",
+  },
+  {
+    id: "dart", num: 21, name: "DART", year: "2026-02", venue: "EMNLP 2026", arxiv: "arXiv:2602.00994v3",
+    evidence: "本地PDF+代码核实", family: "C", parity: "rollout", restore: "none",
+    isCoding: true, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "CEA 因果交互归因 + 梯度夹角诊断 + 双 LoRA 硬路由 RL",
+    modelShort: "Qwen2.5-3B/7B/Coder · Llama3.1-8B · Qwen3-14B · 双 LoRA",
+    modelDetail: "覆盖 5 基座模型（含 Qwen2.5-7B-Coder 与 Qwen3-14B-Base），RL 冻结主干用双 LoRA（各 rank 8）；扩展词表将 &lt;search&gt;/&lt;sql&gt; 注册为单一原子路由 token。",
+    poolDetail: "7 个 QA（NQ+HotpotQA 训，EM）+ 6 个 NL2SQL（SkyRL-SQL 训，EX），$B=4$；CEA 诊断剔除 6 模型 $N=50$ 全错题防 logit 边界伪影。",
+    branchShort: "无分叉 · 原子标签硬路由解耦推理 LoRA 与工具 LoRA 梯度",
+    branchDetail: "沿用完全相同 GRPO 终局优势，仅在参数空间通过原子控制词确定性切换推理与工具 LoRA，避免共享参数梯度互相干扰。",
+    diagDetail: "① CEA 6×6 满秩因果归因（每题 $N=50$ 采样解交互项 $\\lambda_{23}^q$，$66.1\\%\\text{–}74.4\\%$ 为负）；② 角色梯度夹角实测约 $80^\\circ\\text{–}90^\\circ$ 近似正交；③ 固定检索/推理双向隔离评测。",
+    parityShort: "Iso-Step (100 步) + 等参数单 LoRA (r=16) + 2-Agent 上界",
+    parityDetail: "严格控制变量对比等总 rank 单 LoRA（r=16）、软路由 MixLoRA（在模态差更大的 NL2SQL 跌破全参基线）与 2-Agent 上界；14B 报 3 种子。",
+    hwShort: "8× A800 · 100 步（静态显存比 2-Agent 省 ~8×）",
+    hwDetail: "8× NVIDIA A800（veRL + vLLM + FlashAttention-2），100 步，总小时数未披露。",
+    negativeTakeaway: "参数解耦与信用分配是两条正交实验轴：即便给 CoT 与代码动作赋精准优势，自然语言与代码/Shell 的梯度正交仍会引发折中。步骤 7 可单列“双 LoRA 硬路由 vs 等 rank 单 LoRA”消融轴。",
+  },
+  {
+    id: "turn_ppo", num: 22, name: "Turn-PPO", year: "2025-12", venue: "arXiv (v2)", arxiv: "arXiv:2512.17008v2",
+    evidence: "全文/附录核实", family: "C", parity: "rollout", restore: "none",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "GRPO 多轮崩溃排查 + Token-PPO vs Turn-PPO 对比",
+    modelShort: "Qwen2.5-3B/7B · Qwen3-1.7B (开/关思考对比) · 无 SFT",
+    modelDetail: "Qwen2.5-3B/7B（开思考）及 Qwen3-1.7B（专门对比开 vs 关思考）；无 SFT，RAGEN 模板 &lt;think&gt;/&lt;answer&gt;，最多 10 动作。",
+    poolDetail: "WebShop 与 Sokoban（具体切分题量与筛题未披露），汇报验证平均奖励。",
+    branchShort: "无分叉 · Critic 仅在轮末状态 token 估 $V(s_n)$ + 整轮宏动作裁剪",
+    branchDetail: "Critic 仅在每轮观测末尾 token 预测轮状态价值，整轮响应视为宏动作算轮级 GAE（$\\gamma=0.99, \\lambda=0.9$）与整轮重要性比率裁剪；不拆 CoT/Act。",
+    diagDetail: "逐项排查 GRPO 在 Qwen3-1.7B 开思考 WebShop 上崩溃（去 std、去 KL、减 $G$ 增题多样性均难根治）；PPO 配方三消融（Critic lr 须为 Actor $5\\text{–}10\\times$，减 minibatch 优于多 epoch）。",
+    parityShort: "单步 Iso-Rollout：固每步总轨数 $B_R=256/512$（GRPO $G=16$ vs PPO $G=1$）",
+    parityDetail: "明确以 rollout 数为核心瓶颈，固定每步总轨迹数 $B_R$，对比 GRPO、Dr.GRPO、DAPO-style 与 Token-PPO，100/200 步；无随机对照。",
+    hwShort: "GPU 型号与耗时未披露（与 Token-PPO 计算量等价）",
+    hwDetail: "原文未披露 GPU 型号、数量与时长，指出与 Token-PPO 前反向计算量一致。",
+    negativeTakeaway: "极关键负面发现：Qwen3-1.7B 在 WebShop 上关闭思考（$0.80$）大幅高于开启思考（$0.55$），GRPO 开思考直接 Crash！印证原生思考强模型在简单文本环境存在严重过度思考失配，必须转向 Coding。",
+  },
+  {
+    id: "mpo", num: 23, name: "MPO", year: "2026-10", venue: "arXiv (v2)", arxiv: "arXiv:2610.35013v2",
+    evidence: "全文/附录核实", family: "C", parity: "step", restore: "none",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "Critic 价值方差结构诊断 + 两阶段多尺度在线 RL",
+    modelShort: "Qwen3-4B-Thinking · Qwen3-30B-A3B-Inst · 无 SFT",
+    modelDetail: "Qwen3-4B-Thinking（原生思考）与 Qwen3-30B-A3B-Instruct（MoE），无 SFT 预热，原生多轮工具调用。",
+    poolDetail: "Search（SUPO 训；BCP/GAIA/HLE 测，20 轮/32K）、Claw-Eval & Automation Bench（内部私有训练集，20–50 轮/64K）；无筛题披露；单次运行挑验证集最优检查点重测 5 次。",
+    branchShort: "无分叉 · 单 Critic 轮级 GAE ($\\lambda=0.80$) + 轮内中心化局部 GAE ($\\lambda_{\\mathrm{intra}}=0.95$)",
+    branchDetail: "用同一 Critic 在每轮首 token 算轮级 GAE 定均值，再叠加中心化轮内局部 GAE（严格保轮均值不变）+ 整轮 IS 配 stop-grad，Critic 回归终局 MC 回报。",
+    diagDetail: "从 8 检查点抽 2,048 轨 / 16,323 轮分解 Critic 方差：$93.8\\%$ 轨迹轮间方差占主导（中位占比 $89.5\\%$），但轮内小幅累积占相邻差平方和 $90.8\\%$；消融 $\\beta=0$（纯轮级）跌 $5.3\\text{–}6.3\\text{ pp}$；且证明低熵下 pass@32 仍全面领先。",
+    parityShort: "Iso-Step (300/200 步, n=8) · 未补 Critic 开销且单跑挑 best",
+    parityDetail: "对比 GRPO、GSPO、PPO、VAPO、SAO 与 token-IS 消融；未对齐 Critic 额外前反向耗时，且为单种子挑 best checkpoint。",
+    hwShort: "GPU 型号、卡数与总耗时均未披露",
+    hwDetail: "正文与附录均未披露 GPU 配置、总时长及裁剪阈值具体值。",
+    negativeTakeaway: "若步骤 4 显示 Coding 动作已被 CoT 高度决定，MPO 的“轮级定均值 + 轮内中心化精修 + 整轮 IS”是最直接替代方案；但切勿模仿其单次运行挑 best 口径，且单看低熵不能判定探索崩塌，必测 pass@k。",
+  },
+  {
+    id: "factor", num: 24, name: "FACTOR", year: "2026-08", venue: "arXiv", arxiv: "arXiv:2608.07118v1",
+    evidence: "全文/附录核实", family: "C", parity: "wallclock", restore: "sim",
+    isCoding: false, hasRandomCtrl: true, hasQwen3: false, withdrawn: false,
+    expType: "两阶段严格守恒 RL + 三面板深度机理验证（工程标杆）",
+    modelShort: "Qwen2.5-7B (主) · 零调参迁移 14B & Llama3.1-8B · 无 SFT",
+    modelDetail: "主实验 Qwen2.5-7B-Instruct，零超参修改跨规模/架构验证 14B 与 Llama-3.1-8B；沿用 SERL 模板，明确区分动作 token（TAC+HTA+APM+Action-Mean）与非动作 CoT token（沿用原 $A^{\\mathrm{seq}}$）。",
+    poolDetail: "ALFWorld（3,553/134）、WebShop（10.5K/1,000）、ScienceWorld（1,620/540），严零重叠去重附 SHA-256；4K/512；固定 step 150、3 种子贪心评测。",
+    branchShort: "随机选 $B=2$ 检查点各采 $M=4$ 短续跑训轻量价值头 + 动作内 APM 自教师",
+    branchDetail: "前半/后半各随机抽 1 检查点恢复模拟器跑 $M=4$ 条仅推理短续跑（均约 3 轮）训 stop-grad 2 层 MLP 价值头，算严格守恒 1 步 TD 残差（TAC）；动作内用即时反馈自教师做步内均值保持分配（HTA+APM）+ 前 50 步退火 + Action-Mean 损失。",
+    diagDetail: "① 9,600 动作验均值失真（SERL $28\\%\\text{–}32\\%$ 偏超 $10\\%$ vs FACTOR $<4\\times 10^{-7}$）；② 独立 16-MC 真值测步符号一致率 $84.2\\%\\to 89.2\\%$（报错自救步富集 $2.0\\times$）；③ POS+词频+惊奇度双控制 token 扰动（AUC $0.62$）；④ 证 Token-Mean 下长动作隐式权达 $1.35\\times$；⑤ 1 步 TD 胜 3/5 步 TD、GAE 与纯 MC。",
+    parityShort: "严格 Iso-GPU-Hour（SERL-Extended 188 步对齐 1.25× 墙钟）+ 三重置换对照",
+    parityDetail: "核心范本：虽续跑增至 $3.5\\times$ 交互，但仅推理使墙钟仅 $1.25\\times$，作者专跑 188 步 SERL-Extended 严对齐 GPU 小时仍净胜 $+1.6\\text{–}3.6\\text{ pp}$；配 TokenShuffled / CreditShuffled / Shuffled-Φ 三重置换对照 + 10,000 次层次 Bootstrap 95% CI。",
+    hwShort: "8× A100-80GB · 单任务 6h vs 5h · 全账本 9,520 A100h",
+    hwDetail: "8× A100-80GB；单任务 FACTOR ~6h vs SERL ~5h；附录 N 完整披露总计 ~1,190 节点小时（9,520 单卡小时，未剔除失败运行）。",
+    negativeTakeaway: "关键任务依赖：OPD 动作内分配（HTA）在短动作 ALFWorld 上零增益（去掉反升 $+0.2\\text{ pp}$），仅在长动作 WS/SW 生效——呼应第一轮诊断！其完整评测纪律与 Compute Ledger 应作为本课题工程模板。",
+  },
+  {
+    id: "og_opd", num: 25, name: "OG-OPD", year: "2026-09", venue: "arXiv", arxiv: "arXiv:2609.35319v1",
+    evidence: "全文/附录核实", family: "C", parity: "step", restore: "sim",
+    isCoding: false, hasRandomCtrl: true, hasQwen3: true, withdrawn: false,
+    expType: "3 分支 × 5 配对反事实诊断 + 结果引导在线 OPD",
+    modelShort: "Qwen3-32B→1.7B · Qwen3-8B-RL→4B · 明确关闭原生思考",
+    modelDetail: "两组师生配对（32B→1.7B 及 GiGPO 训出的 8B-RL→4B）；附录明确教师与学生均关闭原生 thinking 模式（with native thinking mode disabled）。",
+    poolDetail: "ALFWorld（395 测含 121 道教师 10 采全败 Hard 题）、ScienceWorld（1,308）、WebShop（100 题，奖励 $>0.5$ 判胜）；固定 step 200、3 种子。",
+    branchShort: "3 分支 (S/TS/TT) × 5 配对诊断 · 训练每轨至多 1 对共享种子表 $\\varsigma$ 续跑",
+    branchDetail: "先按相对首轮差距预降权，筛至多 1 候选轮在两个独立环境实例前缀重放至 $k^\\star$，分别执行学生与教师整轮回复后由冻结当前学生在共享随机种子表 $\\varsigma$ 下续跑；仅当 $\\Delta_\\zeta=+1$（学生接力能赢，占总轮 $<1\\%$）放大原轨反向 KL 权重，绝不把教师输出塞进蒸馏目标。",
+    diagDetail: "独立均匀抽样 329 SW / 274 WS 决策跑 3 分支 (S/TS/TT) × 5 共享种子试验：大 gap 组教师伤害（$10.8\\%$，WS $19.2\\%$）高于救援（$8.8\\%$），$20.6\\%$ 为仅教师可完成、学生接不住（TT 成 TS 败）；小 gap 也有 $7.6\\%$ 决定成败。",
+    parityShort: "Iso-Step (200 步, 3 种子固定终点) + 附表报 1.42×/1.48× 耗时 + 随机选轮对照",
+    parityDetail: "对比 Vanilla OPD、TCOD、Guided-OPD、FutureBridge；未跑等墙钟加步版但透明报耗时倍率；含核心 Random turn sampling 随机选轮对照（WS 暴跌 $8.0\\text{ pp}$）。",
+    hwShort: "8× A800 · SW 12.4h (1.42×) / WS 5.5h (1.48×)",
+    hwDetail: "单机 8× A800；SW 223.6 vs 157.0s/step（1.42×），WS 99.7 vs 67.2s/step（1.48×）。",
+    negativeTakeaway: "彻底否定按大 $|D|$ 盲目纠错！若保留 OPD，必须先在 30–50 个 Coding 点上复刻其 3 分支 (S/TS/TT) × 5 配对试验，实测 32B/自教师的净救援率与学生可接力率再做取舍。",
+  },
+  {
+    id: "progress_adv", num: 26, name: "Progress Advantage", year: "2026-06", venue: "arXiv (v2)", arxiv: "arXiv:2606.26080v2",
+    evidence: "全文/附录核实", family: "C", parity: "eval", restore: "none",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "推理期免训练过程优势评测（TTS/UQ/FA）+ 受控 RL 验证",
+    modelShort: "Qwen3.5-9B/Base · Qwen3-14B · Gemma4 · Olmo3 · TTS 关思考",
+    modelDetail: "5 组公开策略-参考配对（直接含 Qwen3.5-9B / Qwen3.5-9B-Base，bf16 双模型峰值仅 ~36 GB）；TTS 生成显式设 enable_thinking=false。",
+    poolDetail: "TTS：BFCLv4(200)、WS(100)、AgentDojo(97)、τ²-Air(50)；UQ：τ²-Air/Ret；FA：Who&When(184)；受控 RL：Sokoban/FrozenLake/WebShop。",
+    branchShort: "推理期零分叉 · 策略与参考各单次前向算 $\\beta\\log(\\tilde{\\pi}^*/\\pi_{\\mathrm{ref}})$",
+    branchDetail: "证明随机 MDP 下 KL 正则对数比精确恢复最优优势；仅对完整轨迹跑策略与参考模型各一次前向，支持跨策略打分及 TIES/WISE 权重插值参考。",
+    diagDetail: "成分消融（对数比 $0.732$ 胜单策略 $0.679$ / 单参考 $0.695$）；参考模型失配权重插值诊断（TIES 优于线性 WISE）；坦诚补报取消 25 种聚合挑优后的固定单一聚合排名与 10,000 次 Bootstrap CI。",
+    parityShort: "同候选轨池零额外交互打分 · 明确标注免训练 vs 专训模型",
+    parityDetail: "对比 Self-Certainty、DeepConf、WildReward-8B、ThinkPRM-14B、AgentPRM-7B、AgenTracer、Claude-Sonnet-4.6；透明折算单 A100 小时与显存峰值。",
+    hwShort: "折算单 A100：本方法全量 46h · Qwen3.5-9B 峰值 ~36 GB",
+    hwDetail: "A6000/A100/H200 混跑折算单 A100：本方法 46h（含全部基线约 184h）；Qwen3.5-9B/Base 单卡 A800 轻松运行。",
+    negativeTakeaway: "三大警示：① 25 种聚合极敏感，必须固定单一先验聚合严禁按集挑优；② 50 题小集 CI 宽达 $0.360$；③ Base 作参考有真实失配且原论文关闭 thinking——步骤 6 应单卡零训练评测其 CoT 段 vs Action 段精度并加测 TIES / 自训 RL 差值。",
+  },
+
+  // ===================== FAMILY D (11 entries / 12 papers) =====================
+  {
+    id: "arctic_swe", num: 27, name: "Arctic-SWE", year: "2026-10", venue: "arXiv", arxiv: "arXiv:2610.24914v1",
+    evidence: "全文/附录核实", family: "D", parity: "rollout", restore: "none",
+    isCoding: true, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "小池过拟合压测 + Coding 异步 RL 强基线 + 执行级数据审计",
+    modelShort: "Qwen3.5-4B & 9B · 原生思考开启 + XML 工具 · 无 SFT",
+    modelDetail: "主线 Qwen3.5-4B，完整版与遗忘探针扩展至 Qwen3.5-9B；无 SFT 预热；原生思考开启 + XML &lt;tool_call&gt;（2 工具），全生成 token 均训，原始 token 畸形格式直判 0 或 -1 终止。",
+    poolDetail: "压测 160 题（R2E-Gym pass@4≥1）；主池三源 21,099→17,861 (F2P)→7,500（反事实补丁审计，留存率 R2E-Gym $57.8\\%$ > Scale-SWE $33.3\\%$ > SWE-rebench V2 $27.0\\%$）+ 4,889 加强测试；评 Verified(483)/Pro(731) avg@4，100–150 轮 / 131K–262K ctx。",
+    branchShort: "无分叉 · 独立 k3s 容器 + 5 步 .git 清理 + FP32 GatedDeltaNet 重算",
+    branchDetail: "标准 $G=5/8$ 独立 rollout；每轨独占本地 k3s 容器，初始化必跑 5 步 .git 清理（断言 0 ref/remote）+ CNI 断网；全链路锁 Qwen3.5 GatedDeltaNet 递归缓存、门控与 $A_{\\log}$ 为 FP32，权重刷新必重算 KV 与递归态。",
+    diagDetail: "① 160 题 200+ epoch 过拟合压测；② 2.3M tok 固定权重核失配审计（$9.4\\times 10^{-5}$）；③ 陈旧 KV vs 递归态 KL 审计（叠加为下限 $5.7\\times$）；④ 沙箱作弊实测（未删 .git 时 9B 200 步内 $99\\%$ 查 git）；⑤ 900 题×4 已淘汰题遗忘探针。",
+    parityShort: "数据/测试单变量严格同步配对 · 诚实标明外部名义槽位差",
+    parityDetail: "采用 CISPO + IcePop 掩码（去 std、整批 token 平均、无 KL、无长度惩罚）；数据筛选与测试加强严格单变量对照；与外部 FrogNano 诚实标注 43.5K vs 256K 槽位差。",
+    hwShort: "8× B200 (2 训+6 推+252 k3s) · 500 步 69.93h (~559 B200h)",
+    hwDetail: "单节点 8× B200 本地共置最多 252 个 k3s 容器（零云沙箱租费）；调度优化后 11.6 min/步，500 步 69.93h。",
+    negativeTakeaway: "四项核心证据：① 4B 淘汰后遗忘 $-10.1\\text{–}11.7\\text{ pp}$ 且早退增 $10\\times$，而 9B 零遗忘（$-0.3\\text{–}1.3\\text{ pp}$）；② 长度惩罚后期从 $60\\%$ 崩至 $8.4\\%$；③ 除组 std 掉 $1.7\\text{ pp}$；④ 公共解析器默默放行 11–12/13 类畸形标签——直定本课题选 9B + R2E-Gym + 5 项基建断言！",
+  },
+  {
+    id: "terminal_world", num: 28, name: "Terminal-World", year: "2026-05", venue: "arXiv", arxiv: "arXiv:2605.20876v1",
+    evidence: "全文/附录核实", family: "D", parity: "eval", restore: "none",
+    isCoding: true, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "技能驱动终端环境/轨迹合成管线 + 纯 SFT（非 RL）与失败审计",
+    modelShort: "Qwen3-8B/14B/32B (教师 DS-V3.2) · Terminus2 开思考 · 纯 SFT",
+    modelDetail: "学生 Qwen3-8B/14B/32B，教师 DeepSeek-V3.2；Terminus2 脚手架原生 thinking 开启；纯 2 epochs SFT（注意无 RL，且 SFT 必须删去采样期引导指南 $\\mathcal{G}$）。",
+    poolDetail: "基于 1,000 单技能 + 76 团队 + 237 图谱合成 5,723 个可执行环境（初始 pytest 必败；DS-V3.2 Pass@1 $39.8\\%$ 贴近 TB 2.0 $38.2\\%$）；评 TB 2.0(89) + 5 终端化基准；32K/40K ctx。",
+    branchShort: "无分叉 · 单通用镜像 + 逐题 setup 脚本（省盘但可能含后台服务）",
+    branchDetail: "全任务复用 1 个通用基础镜像 + 逐题 setup 脚本动态装包、起服务与造文件，大幅节省磁盘；但后台守护进程为中途快照带来不确定性。",
+    diagDetail: "4 强裁判盲审 300 条执行验证器判败轨迹（Fleiss $\\kappa=0.742$）：高达 $67.7\\%$ 在语义上实际已完成！失败轨迹消融：删失败轨掉 $5.6\\text{ pp}$，对失败轨施加负向 SFT 惩罚更差（掉 $6.7\\text{ pp}$）。",
+    parityShort: "纯 SFT 样本量对照（5.7K 胜 Nemotron 490.5K）",
+    parityDetail: "无 RL 对比；SFT 策略消融严控同 1K/2.3K/5.7K 样本量，并在共同做对题交集上无混淆对比执行行为。",
+    hwShort: "合成 API 费 USD 999.59 (USD 0.17/轨) · 32B SFT 32×H20 80h",
+    hwDetail: "5,723 环境与轨迹合成 API 总费仅 USD 999.59；32B SFT 用 4 节点×8 H20-141GB（32 卡）约 80h。",
+    negativeTakeaway: "67.7% 判败轨语义已完成且整轨负惩罚掉 6.7 pp，既佐证细粒度信用分配必要性，也警示不可把 Terminal-World 当零噪声 RL 主池，建议仅作第二补充验证域。",
+  },
+  {
+    id: "tb21", num: 29, name: "Benchmarks as Software (TB 2.1)", year: "2026-11", venue: "arXiv", arxiv: "arXiv:2611.08417v1",
+    evidence: "全文/附录核实", family: "D", parity: "eval", restore: "none",
+    isCoding: true, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "连续基准代理审计修复框架 + 超时资源前沿计量（非训练）",
+    modelShort: "评测 13 模型（含 Qwen3.5-9B/27B）× 4 脚手架（terminus-2）",
+    modelDetail: "覆盖闭源前沿与 Qwen3.5-9B / 27B 等开源模型（131K 上下文），统一基线 terminus-2 对照厂商 CLI；审计代理 Opus 4.6 / GPT-5.4。",
+    poolDetail: "全面审计 TB 2.0 89 题，修复 28 题（$31.5\\%$：指令-测试失配 $57\\%$、外部漂移 $43\\%$、资源过紧 $29\\%$），规定资源下界 $\\ge 1.5\\times$ oracle；另在 Harbor-Index 34 题外推验证（精准 $86\\%$）。",
+    branchShort: "无分叉 · 独立 Docker/Daytona + /oracle 重建确定性复验",
+    branchDetail: "GitHub Actions /audit 与 /oracle 限制代理 propose-only，优先放宽过严测试器防泄题。",
+    diagDetail: "强审计员一致度 $\\kappa=0.80$；TB 2.0 vs 2.1 秩相关 $\\rho=0.958$ 但单模型涨跌达 $12\\text{ pp}$；最高 $32\\times$ 超时扫描证实固定超时造成 $20\\text{–}30\\text{ pp}$ 假性脚手架差距；上游约 $27\\%$ 原始试验因基建错作废。",
+    parityShort: "多档时间预算前沿（分离“能力差距”与“速度差距”）",
+    parityDetail: "无 RL；确立评测公平标准：必须把超时截断失败、答错与基建崩溃分开统计。",
+    hwShort: "API + Docker/Daytona（本地 GPU 耗时未披露）",
+    hwDetail: "开源模型经 Together.ai API 调用，资源扫描最高至 $32\\times$ 默认任务超时，未披露本地 GPU 耗时。",
+    negativeTakeaway: "直接点名 Qwen3.5-9B + terminus-2 在默认超时下失败由 AgentTimeoutError 主导（超时轨留存文件有 $11.8\\%$ 实已做对）！最终评测 TB 2.1 必同时报默认与宽裕双超时预算，并剥离上游基建错误率。",
+  },
+  {
+    id: "r2e_gym", num: 30, name: "R2E-Gym", year: "2025-04", venue: "arXiv", arxiv: "arXiv:2504.07164v1",
+    evidence: "全文/附录核实", family: "D", parity: "eval", restore: "none",
+    isCoding: true, hasRandomCtrl: false, hasQwen3: false, withdrawn: false,
+    expType: "程序化合成可执行 SWE 环境 + 拒绝采样 SFT + 混合验证器缩放",
+    modelShort: "Qwen2.5-Coder-7B/14B/32B (SFT) + 14B LoRA 裁判 · ReAct",
+    modelDetail: "编辑/测试代理全参 SFT，免执行裁判 14B LoRA (r=64)，教师 Sonnet-3.5-v2；OpenHands 极简 ReAct 4 工具（无联网、无原生 thinking）。",
+    poolDetail: "提交挖掘 + 反向翻译构 8,135 题，去重 SWE-bench 仓库后得 R2E-Gym-Subset（4,578 题，仅跨 10 Python 仓库）；3,321 成功轨 SFT；40 步 / 32K（SFT 截 20K）；评 Verified/Lite。",
+    branchShort: "无训练分叉 · 推理期每题 26 编辑轨 + 7 组测试轨 · 逐提交 Docker",
+    branchDetail: "每提交预构 Docker 镜像，补丁送独立测试容器跑回归与生成复现测试。",
+    diagDetail: "① SFT 去 Thought 掉 $4.0\\text{ pp}$（$34.4\\%\\to 30.4\\%$）；② 真实 vs 合成题等量 400 轨近持平（$28.0\\%$ vs $27.8\\%$）；③ 生成测试多数区分度 $<20\\%$、局部毒性率高达 $10\\%$；④ 免执行裁判滑窗注意力审计揭露其过度偏重 CoT 乐观情绪启发式！",
+    parityShort: "Best@K 异构预算对比（加测试轨比加编辑轨更划算）",
+    parityDetail: "无 RL；展示 EB + EF 混合排序打破单验证器 $42\\%\\text{–}43\\%$ 瓶颈直达 $51.0\\%$。",
+    hwShort: "GPU 型号与训练总耗时均未披露",
+    hwDetail: "使用 LLaMA-Factory 全参/LoRA SFT，未披露 GPU 型号、卡数及总时长。",
+    negativeTakeaway: "双重关键启示：① 仅 10 个 Python 仓库的 R2E-Gym-Subset 镜像层复用度极高，最契合 170 GB 磁盘且 Arctic-SWE 实测质量最高；② 警惕步骤 6 中 LLM 裁判被 CoT 自信语气误导，必须用容器反事实真值审计裁判。",
+  },
+  {
+    id: "swe_rebench", num: 31, name: "SWE-rebench V1 & V2", year: "2025-05 / 2026-02", venue: "arXiv (2 篇)", arxiv: "2505.20411 & 2602.23866",
+    evidence: "全文/附录核实", family: "D", parity: "eval", restore: "none",
+    isCoding: true, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "自动化大规模可执行 SWE 建库 + 去污染动态评测（无 RL）",
+    modelShort: "V1 评 13 模型 (Qwen3 think/no-think) · V2 用 Qwen3-Coder-480B 建库",
+    modelDetail: "V1 严格统一纯文本 ReAct（禁 function-call）128K 评测 13 模型；V2 用 Qwen3-Coder-480B + mini-SWE-agent 交互式建环境 + 3 模型一致投票判清晰度。",
+    poolDetail: "V1：21,336 Python 题 + 294 题新榜；V2：32,079 题（20 语言，3,617 仓，连续 3 次重跑去 flaky）+ 120K PR 扩展题；无端到端 RL。",
+    branchShort: "无训练分叉 · V1 buildah+tmpfs · V2 每仓单次安装复用多阶段 Docker",
+    branchDetail: "V1 按 git tag 归一环境并 pip freeze 冻结依赖；V2 每仓在最新 PR 交互安装并复用构建多阶段 Docker 镜像。",
+    diagDetail: "① V1 暴露静态榜污染红利（DS-V3 差 $4.5\\text{ pp}$ 在新榜归零）；② V2 交互安装（$58.8\\%$）远胜非交互（$15.7\\%$）；③ 300 题 7 模型诊断确立洁净 Code A（$26\\%\\text{–}34\\%$）vs 病理 Code B*（$4\\%\\text{–}8\\%$）。",
+    parityShort: "V1 统一 ReAct 5 种子报 SEM 与 Pass@5 · V2 安装消融控 103×10",
+    parityDetail: "无 RL 对比；确立 5 种子防高方差评测习惯与连续 3 次测试去 flaky 标准。",
+    hwShort: "V1 评 16×H200 (7h/轮) · V2 32K 镜像占 26.36 TiB (0.84 GiB/镜)",
+    hwDetail: "V2 建库耗 26,400 任务小时与约 USD 1,900 API 费，32,079 个最终预构镜像总占 26.36 TiB（单镜像均值约 0.84 GiB）。",
+    negativeTakeaway: "硬盘换算警示：单镜 0.84 GiB 意味着 100–200 题直逼 170 GB 上限，务必按仓聚选复用基础层；且 V1 发现纯文本 ReAct 下 Qwen3 开 think 未优于 no-think，文本读题过滤器也抓不住测试过松（too_loose）。",
+  },
+  {
+    id: "ca_survey", num: 32, name: "Credit Assignment Survey", year: "2026-04", venue: "arXiv (v3)", arxiv: "arXiv:2604.09459v3",
+    evidence: "全文/附录核实", family: "D", parity: "eval", restore: "none",
+    isCoding: true, hasRandomCtrl: true, hasQwen3: true, withdrawn: false,
+    expType: "69 篇领域系统综述 + 可识别性形式证明 + 42 篇全文审计",
+    modelShort: "覆盖 2024.01–2026.07 全部推理 / Agentic / 多体 CA 范式",
+    modelDetail: "统一建模为推理 Token-MDP 与 Agentic 轮级 POMDP（Episode→Turn→Segment→Token 四层），无新模型训练。",
+    poolDetail: "92 篇透明筛选台账 → 纳入 69 篇（56 核心 + 13 边界）→ 固定 42 篇核心全文双盲 252 格编码与原子级报告审计。",
+    branchShort: "确立重放三分法（文本重喂 / 解码 KV 恢复 / 环境快照）与副本噪声底",
+    branchDetail: "定义协议特异反事实量 $\\Delta_u(q_u;\\rho)$，区分四层证据阶梯（restored-interventional 最高）与 CA-ID Card 六要素声明契约。",
+    diagDetail: "命题 1（精确恢复状态干预无偏）；命题 2（纯文本隐藏状态反例：两世界 $(h,A,R)$ 同分布但因果功劳分别为 $+1/2$ 与 $-1/2$，纯离线打分连符号都不可识别！）；42 篇审计：仅 19/42 预算对齐、10/42 多种子、21/42 无方差。",
+    parityShort: "拒绝虚假跨论文拼榜 · 强制 CA-ID Card 与总 GPUh + CA 专属开销报告",
+    parityDetail: "审计显示仅 21/42 报告数值型 CA 开销、6 篇完全未报；§10.3 明确呼吁建立带可快照受控分叉点的 Agentic CA 评测集。",
+    hwShort: "综述无训练开销 · 提出未来论文必报总 GPUh 与重置次数",
+    hwDetail: "双盲编码一致率 $88.5\\%$（主家族 $\\kappa=1.000$，保留全部 29 处原始分歧不抹平）。",
+    negativeTakeaway: "既从理论上终结“纯事后打分可辨功劳”的幻想（解释第一轮失败），又直接为本课题“容器快照嵌套分叉评测”提供审稿级 CA-ID Card 契约与明确学术窗口。",
+  },
+  {
+    id: "self_credit", num: 33, name: "Self-Credit", year: "2026-10", venue: "arXiv", arxiv: "arXiv:2610.28388v1",
+    evidence: "全文/附录核实", family: "D", parity: "rollout", restore: "none",
+    isCoding: false, hasRandomCtrl: true, hasQwen3: true, withdrawn: false,
+    expType: "超长程上下文自压缩引用 + 组内证据匹配校准 RL",
+    modelShort: "Qwen3-8B/32B · Gemma4-E4B · 全开 thinking · 无 SFT",
+    modelDetail: "Qwen3-8B/32B 与 Gemma4-E4B 均开启原生 thinking 模式，Hermes 工具格式，无 SFT 预热；全生成 token（含思考、动作与摘要）均参训。",
+    poolDetail: "BrowseComp-Plus（747/83，静态语料）与 OpenResearcher（1K 训，GAIA / xBench 开放网测）+ 4 短程 QA OOD；$T_{\\max}=100$，32K 响应；无 pass@k 筛。",
+    branchShort: "零分叉 · 超 16K 自压缩引用关键轮 + 按检索 docid (Jaccard≥0.6) 跨轨匹配",
+    branchDetail: "独立采 $G=16$ 轨；超 16K 触发自摘要并输出关键轮编号，组内按动作获取的检索 docid 集合重叠匹配轮次，对纯成功重复提权 $2.5$、成败混合退回 $1$、纯失败重复加强负权 $1.5$（线性退火至 $1$），保号不翻号。",
+    diagDetail: "引用定位 F1 对照金文档与 Sonnet 裁判（$69.3\\%$ 胜 ECHO $62.4\\%$、Cite All $53.9\\%$、Random $41.3\\%$）；早/晚期规则触发精度动态；5 项单变量消融含 Random Citations。",
+    parityShort: "严格 Iso-Rollout & Iso-Step（256 轨/步，115/100 步，3 种子，零外部裁判）",
+    parityDetail: "同 VeRL+Megatron 管线与超参对比 GRPO、GiGPO、SUPO、ECHO；自压缩反使均轮数缩短（39.4 vs 45.8）。",
+    hwShort: "64× B200 (8×8) · 3 随机种子（总墙钟未披露）",
+    hwDetail: "全部训练运行在 64 张 NVIDIA B200 GPU，主结果严格报 3 种子均值±标准差。",
+    negativeTakeaway: "去掉“失败轨重复引用负压制”暴跌 $12.1\\text{–}14.1\\text{ pp}$（模型狂刷搜索不交卷）；GiGPO 在开放网 GAIA 崩至 $13.3\\%$。其“按动作证据而非整段状态匹配”可迁移至 Coding（按编辑文件行号/测试名匹配）。",
+  },
+  {
+    id: "triage", num: 34, name: "TRIAGE", year: "2026-06", venue: "arXiv (v3)", arxiv: "arXiv:2606.32017v3",
+    evidence: "全文/附录核实", family: "D", parity: "wallclock", restore: "none",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: true, withdrawn: false,
+    expType: "冲突格人工审计 + 局部窗口思考裁判 4 角色 RL",
+    modelShort: "策略 Qwen2.5-7B / Qwen3-1.7B · 裁判 Qwen3-8B-thinking · 无 SFT",
+    modelDetail: "策略无 SFT 预热，默认冻结 Qwen3-8B（enable_thinking=True, $T=0$）作训练期裁判，推理期零裁判开销；优势加于该步全部生成 token（不拆 CoT/Act）。",
+    poolDetail: "ALFWorld、WebShop、Search-QA；$G=8$，150 步，4K/512，二值终局奖；无筛题。",
+    branchShort: "无分叉 · 前后 5 步局部窗口（隐终局）+ 证据串 → 4 角色固定常数",
+    branchDetail: "切出每步前后至多 5 步局部窗口（不给终局结果），令思考裁判先写证据串再判 $D/E/N/R$ 四角色，加固定常数 $(1, 0.5, -0.1, -0.5)$ 到 GRPO 优势后批白化。",
+    diagDetail: "2 盲标员 + 1 仲裁员标 18 轨 135 段（一致率 $88.1\\%$）：不开 thinking 裁判在 R-in-success 冲突格 F1 仅 $24\\%$，开启 thinking 跃至 $82\\%$！并核实 $43\\%/48\\%$ 退步占比仅为 6 条审计轨长度加权值。",
+    parityShort: "保守超额等壁钟（GRPO 延至 300 步超 1.9× 等价点，10 种子仍胜 +3.8 pp）",
+    parityDetail: "实测单步慢 $1.9\\times$，作者将 GRPO 延至 300 步（超过 255–285 等价点）跑满 10 种子仍领先 $3.8\\text{ pp}$；对比 PPO、GiGPO、共享主干价值头与同裁判标量打分。",
+    hwShort: "GPU 型号未披露 · 单步 1.9× · ALF/WS 跑 10 独立种子",
+    hwDetail: "未披露 GPU 型号与卡数，但 ALFWorld 与 WebShop 严格执行 10 独立种子（Search-QA 单跑明示）。",
+    negativeTakeaway: "换用不开 thinking 裁判后 RL 结果反而低于原始 GRPO！步骤 6 评测 LLM 裁判务必采用“开 thinking + 前后 5 步局部窗口 + 隐终局 + 证据串”强配置，并按冲突格拆报 F1；步骤 7 直接效仿其超额等壁钟对照。",
+  },
+  {
+    id: "agentprm", num: 35, name: "AgentPRM", year: "2025-11", venue: "arXiv", arxiv: "arXiv:2511.08325v1",
+    evidence: "全文/附录核实", family: "D", parity: "rollout", restore: "sim",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: false, withdrawn: false,
+    expType: "TD+GAE 过程奖励模型训练 + 推理期搜索主测 + 末步 PPO 延伸",
+    modelShort: "Qwen2.5-0.5B/3B/7B · Llama3.1-8B · 300 条示范 SFT · ReAct",
+    modelDetail: "先用 300 条 AgentGym 示范轨迹 SFT 预热，采用传统 ReAct（无原生 &lt;think&gt; 开关），PRM 评整步动作。",
+    poolDetail: "WebShop（$T=6$, 100 测）、BabyAI（$T=20$, 90）、TextCraft（$T=20$, 97）及 GSM8K；无 pass@k 筛。",
+    branchShort: "TD 路线无分叉（$N=16$ 整轨）；MC 对照每步分叉 16 支（存在即标 1）",
+    branchDetail: "依托确定性转移与中间零奖假设，用相邻步差近似优势并用 TD+GAE（$\\lambda=0.95$）联合训 $\\mathcal{L}_Q+\\mathcal{L}_A$；推理期 Beam Search 扩展模拟器节点。",
+    diagDetail: "TD 标注比 MC 省 $1.5\\times\\text{–}2.8\\times$ 采样 token 且搜索更高（WebShop 76.0% vs 70.5%）；消融 $\\mathcal{L}_A$ 全面掉分；无真值秩相关或符号一致率指标。",
+    parityShort: "推理搜索对齐总采样预算（省 8×）· 附 C 披露 PPO 仅用末步分",
+    parityDetail: "BoN 与 Beam 对比 SFT/RFT/ORM/PVM；重要隐蔽细节：附录 C 明确 PPO 实验仅把 PRM 末步预测分作整轨奖励，非逐轮稠密 RL。",
+    hwShort: "NVIDIA A100-80GB（卡数与总时长未披露）",
+    hwDetail: "仅披露使用 A100-80GB，具体卡数与耗时未披露。",
+    negativeTakeaway: "仅估 $Q$ 值（PVM）随采样增大出现刷分退化；其 MC 对照“16 条有 1 条成即标 1”属 max 乐观偏差——嵌套分叉真值必用样本均值，不可用存在性二值标签。",
+  },
+  {
+    id: "trca", num: 36, name: "TRCA", year: "2026-08", venue: "arXiv (v2)", arxiv: "arXiv:2608.16156v2",
+    evidence: "全文/附录核实", family: "D", parity: "rollout", restore: "none",
+    isCoding: false, hasRandomCtrl: false, hasQwen3: false, withdrawn: false,
+    expType: "早期全败组诊断 + 离线一次性合成规则算子 + 在线 RL",
+    modelShort: "Qwen2.5-1.5B/3B/7B · 无 SFT · 附 B.3 屏蔽全部 &lt;think&gt; 只训 &lt;action&gt;",
+    modelDetail: "Qwen2.5-1.5B/3B/7B-Instruct，零 SFT；显式 &lt;think&gt;+&lt;action&gt; 模板，但附录 B.3 明确将全部 &lt;think&gt; token 屏蔽，策略梯度仅回传至 &lt;action&gt;！",
+    poolDetail: "ALFWorld（$T=25$）、WebShop、7 SearchQA（NQ+HotpotQA 训，5 OOD 测）；$G=8$，512 响应；无筛题。",
+    branchShort: "零分叉 · 零在线裁判 · 训练前一次性生 15 条确定性布尔算子 + 突破势能差",
+    branchDetail: "训练前一次性调 GPT-5.6-sol 生成每库 15 条算子（Evidence/Invalidity/Execution 各 5），算基础奖 + 首次满足突破势能差 $\\Phi_t-\\Phi_{t-1}$ + 结构字段步组标准化。",
+    diagDetail: "早期 128 轨人工+GPT-4o 诊断：$96.5\\%$ 轨败、$85.6\\%$ 组全败，但 $72.2\\%$ 失败动作含有效转移信号；双分量与 $\\lambda$ 扫描（纯突破 $\\lambda=1.0$ 去非法罚掉 $3.7\\text{ pp}$）。",
+    parityShort: "按总采样轨数（Iso-Rollout: 1.92K / 3.84K / 6.40K）对齐，零裁判开销",
+    parityDetail: "对比 PPO、RLOO、GRPO、GiGPO、HCAPO、GraphGPO、Search-R1、IGPO；3 种子均值±标准差。",
+    hwShort: "4× A800-80GB · 3 随机种子（总墙钟未披露）",
+    hwDetail: "单机 4× NVIDIA A800-80GB（与用户硬件层级最接近），未披露总小时数。",
+    negativeTakeaway: "屏蔽全部 &lt;think&gt; 只训 &lt;action&gt; 仍在 ALFWorld 刷出 $94.5\\%$，强力印证短动作环境 CoT 功劳模糊；同时开放代码仓难以用 15 条静态规则穷尽，须靠测试与反事实分叉校准。",
+  },
+  {
+    id: "pav", num: 37, name: "Rewarding Progress (PAV)", year: "2024-10", venue: "arXiv", arxiv: "arXiv:2410.08146v1",
+    evidence: "全文/附录核实", family: "D", parity: "rollout", restore: "text",
+    isCoding: false, hasRandomCtrl: true, hasQwen3: false, withdrawn: false,
+    expType: "理论刻画 + 合成 MDP + MC 标注 PAV 训练 + 搜索与在线 RL",
+    modelShort: "Gemma2-2B/9B/27B (SFT→RFT 预热) · PAV 均微调 9B · 数学步",
+    modelDetail: "策略先经 5K 步 SFT + RFT 预热，全部过程验证器统一基于 Gemma2-9B 微调；单轮数学推理按换行切步（512 tok）。",
+    poolDetail: "MATH（收超 30 万条类别平衡 prefix-Q 对训 PAV 20K 步）+ 10 步 15 词表合成 MDP 玩具环境。",
+    branchShort: "纯文本前缀重喂 MC · first pit（首个 $Q^\\pi=0$ 陷阱步）聚焦 + $n_{\\mathrm{mc}}=20$",
+    branchDetail: "先采种子轨覆盖状态，在失败轨定位 first pit 陷阱步并对之前前缀重采 $n_{\\mathrm{mc}}=20$ 估 $Q^\\pi$，再解析算 $\\mathrm{BoK}(\\pi)$ 互补 prover 的进展优势 $A^\\mu=Q^\\mu_h-Q^\\mu_{h-1}$。",
+    diagDetail: "合成环境 prover 强度 $\\gamma$ 扫频（过强/过弱优势均归零）；$n_{\\mathrm{cov}}$ vs $n_{\\mathrm{mc}}$ 缩放律（低预算优保覆盖，高预算再加单点重采）；中间步终局预测误差；3×3 基座×证明者矩阵（弱 2B prover 在 RL 上最能提 9B 基座！）。",
+    parityShort: "搜索计入 Beam $C=3$ 计算量对齐（省 1.5–5×）；RL 按步数比（未计 300K 离线标注）",
+    parityDetail: "对比 SFT、RFT、ORM-RL 与绝对价值 PQV；显式区分推理搜索与离线标注算力边界。",
+    hwShort: "硬件型号与总时长均未披露（PAV 20K 步，RL 5K–10K 步）",
+    hwDetail: "正文与附录均未披露 TPU/GPU 型号、卡数及训练墙钟小时数。",
+    negativeTakeaway: "用绝对价值 $Q^\\mu$ 替代进展优势 $A^\\mu$ 会稳态崩塌为首步复读 \"REPHRASE THE PROBLEM\" 刷分！直接指导本课题：① 低预算先保决策点覆盖并聚焦 first pit 转折点；② OPD/探针老师未必越强越好，32B 之外须并测中等/互补模型。",
+  }
+);
+
+const DECISIONS = [
+  {
+    num: 1,
+    question: "课题定位：做“功劳估计器的反事实评测”，还是做新的信用分配方法？",
+    badge: "优先定位：反事实评测 + 因果分解",
+    badgeTag: "pos",
+    verdict: "建议将主轴定为<strong>“Coding Agent 上基于容器快照嵌套分叉的 CoT-Action 因果分解与功劳估计器反事实评测（<code>restored-interventional</code> 协议）”</strong>，辅以基于评测胜出机制的小规模严格等壁钟 RL 收尾验证，不以与大型集群竞逐新 RL 算法绝对分数为主目标。",
+    evidence: [
+      "<b>明确学术空白</b>：69 篇综述（§10.3）与 <code>Coverage, Not Targeting</code> 共同呼吁建立“带可快照受控分叉点 + 副本噪声底 + 算力账本”的评测套件；全 38 篇核查确认尚无工作在真实 Coding Agent 上实测分离 $A_{\\mathrm{CoT}}$ 与 $A_{\\mathrm{act}}$（CRR 关闭 thinking、RICE-PO 捆绑 $(z,a)$、C3 仅限纯文本数学链）。",
+      "<b>算力结构现实</b>：工业界在线 RL 刷榜已进入 8×B200 70h（Arctic-SWE）、64×B200（Self-Credit）与 8×H100 321h（CRR）量级，且 Arctic-SWE 证实调稳基线即可大涨 15+ pp；反观严谨反事实评测在 1×–4× A800 上即可产出高不可替代性基准。",
+      "<b>条件升级路径</b>：若步骤 5–6 发现极简且稳定超越全部阴性对照的信号组合，可顺理成章升级为“实证分解 + 轻量方法 + 等壁钟验证”双贡献。"
+    ],
+    papers: ["ca_survey", "coverage", "c3", "crr", "arctic_swe"]
+  },
+  {
+    num: 2,
+    question: "主战场：SWE 训练池还是终端训练池？",
+    badge: "首选：R2E-Gym-Subset（10 Python 仓）",
+    badgeTag: "pos",
+    verdict: "主战场首选 SWE 的 <strong><code>R2E-Gym-Subset</code>（去污染 4,578 题，跨 10 个 Python 仓库）</strong>；<code>Terminal-World</code> 仅作第二补充验证环境；<code>SWE-bench Verified</code>（483/500 题）与 <code>Terminal-Bench 2.1</code>（89 题）严格只做最终评测集。",
+    evidence: [
+      "<b>测试质量差距显著</b>：<code>Arctic-SWE</code> 反事实补丁审计实测三库质量留存率为 <b>R2E-Gym $57.8\\%$ > Scale-SWE $33.3\\%$ > SWE-rebench V2 $27.0\\%$</b>；而 <code>Terminal-World</code> 4 裁判审计（$\\kappa=0.742$）暴露 <b>$67.7\\%$ 判败轨迹语义实已完成</b>，易向嵌套分叉注入验证器噪声。",
+      "<b>170 GB 磁盘与快照可行性</b>：<code>SWE-rebench V2</code> 单镜像均占 $0.84\\text{ GiB}$（全库 $26.36\\text{ TiB}$），难以塞入 170 GB 硬盘；<code>R2E-Gym-Subset</code> 集中在 10 个 Python 仓库，镜像基础层高度复用且无后台常驻服务，适配轻量写时复制快照与 5 步 <code>.git</code> 清理。",
+      "<b>起点难度匹配</b>：<code>Qwen3.5-9B</code> 在 SWE-bench Verified 起点约 $53\\%$（处 $20\\%\\text{–}80\\%$ 有效区间），且 <code>PaTR</code> 已验证过滤后 R2E-Gym 300 步即可稳定训出增益。"
+    ],
+    papers: ["arctic_swe", "r2e_gym", "swe_rebench", "terminal_world", "tb21", "patr"]
+  },
+  {
+    num: 3,
+    question: "起点模型：Qwen3.5-9B，还是为省算力换 4B 级模型？",
+    badge: "正式坚持 Qwen3.5-9B · 4B 仅作冒烟",
+    badgeTag: "acc",
+    verdict: "正式诊断、嵌套分叉与 RL 坚持使用 <strong><code>Qwen3.5-9B</code></strong>；仅在步骤 1–2 调试容器快照、Token-in-Token-out 与评测脚本时用 <code>Qwen3.5-4B</code> 做快速冒烟。",
+    evidence: [
+      "<b>4B 遗忘与格式退化风险</b>：<code>Arctic-SWE</code> 遗忘探针（900 题×4）实测任务淘汰下 <code>Qwen3.5-4B</code> 已掌握题暴跌 $-10.1\\text{–}11.7\\text{ pp}$、格式早退率暴增 $10\\times$，而 <b><code>Qwen3.5-9B</code> 零遗忘（$-0.3\\text{–}1.3\\text{ pp}$）</b>、早退零增长。",
+      "<b>多步因果能力门槛</b>：<code>Coverage, Not Targeting</code> 证实 4B 在多步先决链完成率仅 $24\\%$（对比大一档模型约 $70\\%$），跌落门槛导致所有信用几何均呈零差；<code>80/20</code> 亦显示小模型高熵过滤增益极微。",
+      "<b>单卡显存可行性</b>：<code>Progress Advantage</code> 实测 <code>Qwen3.5-9B / 9B-Base</code> bf16 双模型峰值仅约 <b>36 GB</b>（单模型 ~18 GB），单张 A800-80GB 完全可承载；<code>RACE</code> 已在 <code>Qwen3.5-9B</code> 原生思考+工具下验证可行。"
+    ],
+    papers: ["arctic_swe", "coverage", "progress_adv", "race", "rule8020"]
+  },
+  {
+    num: 4,
+    question: "OPD 方向是否继续；若继续，老师用哪个模型？",
+    badge: "不作纯 KL 主线 · 保留步骤 6 评测与小样本诊断",
+    badgeTag: "warn",
+    verdict: "放弃把“按 $|D|$ 盲目做反向 KL 蒸馏”当作主方法，但<strong>保留 OPD 为步骤 6 重点被测估计器，并花 1–2 天在 30–50 个 Coding 决策点上跑小规模 <code>OG-OPD</code> 3 分支诊断定案</strong>；若继续，仅走受限路径并并测三档老师。",
+    evidence: [
+      "<b>为何不可盲目纠错</b>：<code>SERL</code> 证纯自蒸馏 SDPO 在 WebShop 归零（$0.0\\%$），塞未来轨迹反拉崩 $14\\text{ pp}$；<code>OG-OPD</code> 3 分支（<code>S/TS/TT</code>）×5 试验实证大 gap 处<b>教师伤害（$10.8\\%$）高于救援（$8.8\\%$）</b>，$20.6\\%$ 是教师能做但学生接不住。",
+      "<b>两条已证安全路径</b>：① <code>FACTOR</code> 路线（同权重自教师看<b>即时 pytest 报错输出 $\\Phi_t$</b> + 动作掩码 + APM 均值保持 + 早期退火，零额外显存）；② <code>OG-OPD</code> 路线（仅在配对续跑证实学生接力能赢的 $<1\\%$ 关键轮加权，不把教师输出塞进蒸馏目标）。",
+      "<b>老师选型（PAV 启示）</b>：<code>Rewarding Progress</code> 表明最强模型未必区分度最高，建议 30–50 点并测三档老师：① 同权重即时报错自教师；② 同规模已 RL 强策略（如 <code>Ornith-1.5-9B</code> 或本机早期 RL 检查点）；③ 更大零样本教师（<code>Qwen3-32B</code> / <code>Qwen3.5-27B</code>），用净救援率实测裁决。"
+    ],
+    papers: ["og_opd", "serl", "factor", "pav"]
+  },
+  {
+    num: 5,
+    question: "ScienceWorld / TWX 是完全退出，还是保留为对照？",
+    badge: "退出主战场 · 留作冒烟与短动作对照锚",
+    badgeTag: "acc",
+    verdict: "<strong>彻底退出核心机理与 RL 主战场</strong>，仅保留两项零成本辅助角色：① 分钟级工程冒烟流水线（验嵌套分叉、Token-in-Token-out、ANOVA 与 <code>CA-ID Card</code> 脚本）；② 论文中的<strong>“短动作低思考退化对照锚点”</strong>。",
+    evidence: [
+      "<b>跨论文多方互证</b>：在短动作文字/购物环境上，<code>Turn-PPO</code> 测得 Qwen3 开思考（$0.55$）大幅劣于关思考（$0.80$）；<code>FACTOR</code> 测得动作内 OPD 在 ALFWorld 零增益（去掉反升 $+0.2\\text{ pp}$）；<code>TRCA</code> 屏蔽全部 <code>&lt;think&gt;</code> 只训 <code>&lt;action&gt;</code> 仍刷出 $94.5\\%$。",
+      "<b>与第一轮诊断实证对齐</b>：第一轮已证实 SW/TWX 动作极短、$98\\%$ 步被 CoT 决定且存在 $33.5\\%$ 原地打转。用第一轮数据作为短动作反例，可清晰衬托转战 Coding 长动作嵌套分叉的科学必要性。"
+    ],
+    papers: ["turn_ppo", "factor", "trca", "actfocus"]
+  },
+  {
+    num: 6,
+    question: "算力预算：能否增加 GPU？（单卡 A800 vs 扩容分档账本）",
+    badge: "步骤 1–6 单卡可行 · 步骤 7 完整 RL 需 4–8 卡",
+    badgeTag: "warn",
+    verdict: "<strong>分两阶段决策</strong>：现有 <code>1× A800-80GB</code> <strong>完全足以在 1–2 周内完成步骤 1–6 全部嵌套分叉诊断与 9 类估计器横评</strong>；若随后推进步骤 7 完整多轮在线 RL（3 种子 + 等壁钟基线），强烈建议扩容至 <code>4×–8× A800/H100</code>（本地 SSD $\\ge 500\\text{ GB}$、CPU $\\ge 32\\text{–}64$ 核）；若无法加卡，步骤 7 降级为单卡冻结批受控 LoRA RL。",
+    evidence: [
+      "<b>阶段一（步骤 1–6，1× A800 可行账本）</b>：对标 <code>Progress Advantage</code>（<code>Qwen3.5-9B/Base</code> 峰值 36 GB、全量 46 单卡时）、<code>Re-feeding</code>（单卡 &lt; 10 美元）与 <code>Coverage</code>（单卡 96 GB）。步骤 3 筛选约 1–2 天，步骤 4 半天，步骤 5 约 2,600 次仅推理无反传续跑约 2–4 天，步骤 6 离线打分 1–2 天。",
+      "<b>阶段二（步骤 7 完整 RL 行业账本）</b>：<code>TRCA</code> 用 4×A800 跑 3 种子短文本；<code>OG-OPD</code> 用 8×A800 单任务 5.5–12.4h；<code>FACTOR</code> 用 8×A100 总计 9,520 A100h；<code>CRR</code> 用 8×H100 跑 SWE 40h（321 H100h）；<code>Arctic-SWE</code> 用 8×B200 跑 9B 500 步 70h。",
+      "<b>无加卡兜底方案</b>：若锁死单卡 A800，效仿 <code>Coverage, Not Targeting</code> 做<b>冻结共享 Rollout 的 1–5 步受控 LoRA（r=16–64）配对更新</b>，2–3 天跑满多种子验证均匀 GRPO vs 胜出估计器 vs Shuffled。"
+    ],
+    papers: ["progress_adv", "refeeding", "coverage", "trca", "factor", "crr", "arctic_swe"]
+  },
+  {
+    num: 7,
+    question: "第一轮的 E14 人工标注是否还做？",
+    badge: "停止 SW/TWX 标注 · 平移至 Coding 15–20 轨双盲校验",
+    badgeTag: "pos",
+    verdict: "<strong>立即停止在 ScienceWorld / TWX 上投入 E14 人工标注</strong>，将同等人工精力（1–2 人日）整体平移到新 <code>R2E-Gym</code> 诊断池，执行 <strong>15–20 条轨迹（约 120–150 步）的双盲语义角色标注</strong>。",
+    evidence: [
+      "<b>为何放弃原 SW/TWX E14</b>：69 篇综述命题 2 证明纯文本事后归因不可识别；且第一轮数据存在 $33.5\\%$ 打转步与任务难度未校准缺陷，继续精标坏样本边际收益近零。",
+      "<b>平移至 Coding 池的高价值产出</b>：参照 <code>TRIAGE</code>（仅 18 轨 135 段、2 盲标员 + 1 仲裁员、一致率 $88.1\\%$ 即查出 no-think 裁判在 <code>R-in-success</code> 格 $24\\%$ 盲区）与 <code>R2E-Gym</code>（查出裁判受 CoT 乐观语气误导），在 Coding 新池上形成“人类专家语义 × 容器嵌套反事实真值”双重互证。"
+    ],
+    papers: ["ca_survey", "triage", "r2e_gym"]
+  }
+];
+
+const PAPER_MAP = Object.fromEntries(PAPERS.map(p => [p.id, p]));
+
+// ---------------- KaTeX Helper ----------------
+const KATEX_OPTS = {
+  delimiters: [
+    { left: "$$", right: "$$", display: true },
+    { left: "$", right: "$", display: false },
+  ],
+  ignoredClasses: ["no-math"],
+  throwOnError: false,
+};
+function typeset(el) {
+  if (el && window.renderMathInElement) {
+    renderMathInElement(el, KATEX_OPTS);
+  }
+}
+function esc(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// ---------------- State ----------------
+const state = {
+  expandedId: null,
+  compareIds: ["crr", "arctic_swe", "patr"],
+};
+
+// ---------------- Tabs ----------------
+const TAB_IDS = ["overview", "matrix", "comparator", "blueprint", "decisions"];
+function showTab(id) {
+  if (!TAB_IDS.includes(id)) return;
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === id));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("active", p.id === id));
+}
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    showTab(btn.dataset.tab);
+    history.replaceState(null, "", "#" + btn.dataset.tab);
+    window.scrollTo({ top: 0 });
+  });
+});
+
+// ---------------- Tab 1: Overview SVG Chart ----------------
+function renderOverviewChart() {
+  const famCounts = ["A", "B", "C", "D"].map(k => ({
+    key: k,
+    label: FAMILY_META[k].label,
+    color: FAMILY_META[k].color,
+    n: PAPERS.filter(p => p.family === k).length,
+  }));
+  const parCounts = ["wallclock", "rollout", "step", "eval"].map(k => ({
+    key: k,
+    label: PARITY_META[k].label,
+    color: PARITY_META[k].color,
+    n: PAPERS.filter(p => p.parity === k).length,
+  }));
+  const barBlock = (title, items, ox) => {
+    const maxN = Math.max(...items.map(d => d.n), 1);
+    const rows = items.map((d, idx) => {
+      const y = 44 + idx * 38;
+      const bw = Math.round((d.n / maxN) * 230);
+      const pct = Math.round((d.n / PAPERS.length) * 100);
+      return `
+        <text x="${ox}" y="${y + 15}" font-family="-apple-system,PingFang SC,sans-serif" font-size="12" fill="#1b1b1b">${esc(d.label)}</text>
+        <rect x="${ox + 168}" y="${y + 2}" width="230" height="18" rx="3" fill="#efede6" />
+        <rect x="${ox + 168}" y="${y + 2}" width="${bw}" height="18" rx="3" fill="${d.color}" opacity="0.88" />
+        <text x="${ox + 406}" y="${y + 15}" font-family="-apple-system,PingFang SC,sans-serif" font-size="12" font-weight="600" fill="#1b1b1b">${d.n} 条 (${pct}%)</text>`;
+    }).join("");
+    return `
+      <text x="${ox}" y="22" font-family="-apple-system,PingFang SC,sans-serif" font-size="13" font-weight="600" fill="#1f4e79">${esc(title)}</text>
+      ${rows}`;
+  };
+  document.getElementById("overview-chart-box").innerHTML = `
+    <svg viewBox="0 0 1040 205" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="37 条实验协议按家族与算力口径分布">
+      ${barBlock("按方法家族分布（总计 37 条 / 38 篇）", famCounts, 16)}
+      <line x1="518" y1="12" x2="518" y2="192" stroke="#e2dfd6" stroke-dasharray="4 3" />
+      ${barBlock("按算力公平性控制口径分布", parCounts, 540)}
+    </svg>`;
+}
+
+// ---------------- Tab 2: Matrix ----------------
+function getFilteredPapers() {
+  const q = document.getElementById("f-search").value.trim().toLowerCase();
+  const fam = document.getElementById("f-family").value;
+  const par = document.getElementById("f-parity").value;
+  const res = document.getElementById("f-restore").value;
+  const coding = document.getElementById("f-coding").checked;
+  const rand = document.getElementById("f-random").checked;
+  const qwen3 = document.getElementById("f-qwen3").checked;
+  return PAPERS.filter(p => {
+    if (fam !== "all" && p.family !== fam) return false;
+    if (par !== "all" && p.parity !== par) return false;
+    if (res !== "all" && p.restore !== res) return false;
+    if (coding && !p.isCoding) return false;
+    if (rand && !p.hasRandomCtrl) return false;
+    if (qwen3 && !p.hasQwen3) return false;
+    if (q) {
+      const hay = [
+        p.name, p.arxiv, p.venue, p.expType, p.modelShort, p.modelDetail,
+        p.poolDetail, p.branchShort, p.branchDetail, p.diagDetail,
+        p.parityShort, p.parityDetail, p.hwShort, p.hwDetail, p.negativeTakeaway
+      ].join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderMatrix() {
+  const list = getFilteredPapers();
+  document.getElementById("matrix-count").textContent = `当前显示 ${list.length} / ${PAPERS.length} 条`;
+  const tbody = document.getElementById("matrix-tbody");
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted);">无匹配条目，请放宽筛选条件或清空搜索框。</td></tr>`;
+    return;
+  }
+  const html = list.map(p => {
+    const fm = FAMILY_META[p.family];
+    const pm = PARITY_META[p.parity];
+    const isExp = state.expandedId === p.id;
+    const inCmp = state.compareIds.includes(p.id);
+    const flags = [
+      p.withdrawn ? `<span class="tag neg">v2 已撤稿</span>` : "",
+      p.isCoding ? `<span class="tag acc">Coding</span>` : "",
+      p.hasRandomCtrl ? `<span class="tag pos">含随机/置换对照</span>` : "",
+    ].join("");
+    const mainRow = `
+      <tr class="paper-row ${isExp ? "expanded" : ""} ${p.withdrawn ? "warn-row" : ""}" data-pid="${p.id}">
+        <td>
+          <div><b>${p.num}. ${esc(p.name)}</b></div>
+          <div class="note" style="font-size:12.5px;"><code>${esc(p.arxiv)}</code> · ${esc(p.year)}</div>
+          <div style="margin-top:3px;"><span class="tag">${esc(p.evidence)}</span>${flags}</div>
+        </td>
+        <td><span class="tag ${fm.tag}">${esc(fm.label)}</span></td>
+        <td>${p.modelShort}</td>
+        <td><span class="tag ${pm.tag}">${esc(pm.label)}</span><div style="margin-top:3px;font-size:13px;">${p.parityShort}</div></td>
+        <td><span class="tag">${esc(RESTORE_META[p.restore])}</span><div style="margin-top:3px;font-size:13px;">${p.branchShort}</div></td>
+        <td style="font-size:13px;">${p.hwShort}</td>
+        <td>
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <button class="btn toggle-detail-btn" type="button" data-pid="${p.id}">${isExp ? "收起详情" : "展开 8 维详情"}</button>
+            <button class="btn toggle-cmp-btn ${inCmp ? "active" : ""}" type="button" data-pid="${p.id}">${inCmp ? "已加入对比 ✓" : "+ 加入对比"}</button>
+          </div>
+        </td>
+      </tr>`;
+    if (!isExp) return mainRow;
+    const detailRow = `
+      <tr class="detail-row">
+        <td colspan="7">
+          <div class="detail-drawer">
+            <div class="detail-header">
+              <div>
+                <div class="detail-title">${p.num}. ${esc(p.name)}（<code>${esc(p.arxiv)}</code> · ${esc(p.venue)}）</div>
+                <div class="note">${p.expType}</div>
+              </div>
+              <button class="btn subtle jump-cmp-btn" type="button" data-pid="${p.id}">在并排对比器中查看 →</button>
+            </div>
+            <div class="detail-grid">
+              <div class="detail-cell"><div class="detail-cell-lbl">① 基座模型、思考开关与 SFT 预热</div><div>${p.modelDetail}</div></div>
+              <div class="detail-cell"><div class="detail-cell-lbl">② 训练任务池、评测集与难度 / 确定性过滤</div><div>${p.poolDetail}</div></div>
+              <div class="detail-cell"><div class="detail-cell-lbl">③ Rollout 分叉机制与状态恢复方式</div><div>${p.branchDetail}</div></div>
+              <div class="detail-cell"><div class="detail-cell-lbl">④ 机理诊断真值构建与统计指标</div><div>${p.diagDetail}</div></div>
+              <div class="detail-cell"><div class="detail-cell-lbl">⑤ RL 基线对比、算力公平性口径与随机对照</div><div>${p.parityDetail}</div></div>
+              <div class="detail-cell"><div class="detail-cell-lbl">⑥ 硬件配置与实测耗时开销</div><div>${p.hwDetail}</div></div>
+              <div class="detail-cell full warn-cell"><div class="detail-cell-lbl">⑦ 关键负面发现、边界警示与对 Qwen3.5-9B Coding 方案的直接借鉴</div><div>${p.negativeTakeaway}</div></div>
+            </div>
+          </div>
+        </td>
+      </tr>`;
+    return mainRow + detailRow;
+  }).join("");
+  tbody.innerHTML = html;
+  typeset(tbody);
+}
+
+document.getElementById("matrix-tbody").addEventListener("click", e => {
+  const cmpBtn = e.target.closest(".toggle-cmp-btn");
+  if (cmpBtn) {
+    e.stopPropagation();
+    toggleCompareId(cmpBtn.dataset.pid);
+    return;
+  }
+  const jumpBtn = e.target.closest(".jump-cmp-btn");
+  if (jumpBtn) {
+    e.stopPropagation();
+    const pid = jumpBtn.dataset.pid;
+    if (!state.compareIds.includes(pid)) {
+      state.compareIds = [pid, ...state.compareIds.slice(0, 2)];
+      syncComparatorSelects();
+    }
+    renderComparator();
+    showTab("comparator");
+    window.scrollTo({ top: 0 });
+    return;
+  }
+  const row = e.target.closest("tr.paper-row");
+  if (row) {
+    const pid = row.dataset.pid;
+    state.expandedId = state.expandedId === pid ? null : pid;
+    renderMatrix();
+  }
+});
+
+["f-family", "f-parity", "f-restore", "f-coding", "f-random", "f-qwen3"].forEach(id => {
+  document.getElementById(id).addEventListener("change", renderMatrix);
+});
+document.getElementById("f-search").addEventListener("input", renderMatrix);
+document.getElementById("f-reset").addEventListener("click", () => {
+  document.getElementById("f-search").value = "";
+  document.getElementById("f-family").value = "all";
+  document.getElementById("f-parity").value = "all";
+  document.getElementById("f-restore").value = "all";
+  document.getElementById("f-coding").checked = false;
+  document.getElementById("f-random").checked = false;
+  document.getElementById("f-qwen3").checked = false;
+  renderMatrix();
+});
+
+// ---------------- Tab 3: Comparator ----------------
+function populateComparatorSelects() {
+  const opts = PAPERS.map(p => `<option value="${p.id}">${p.num}. ${esc(p.name)} (${esc(p.arxiv)})</option>`).join("");
+  document.getElementById("cmp-s0").innerHTML = opts;
+  document.getElementById("cmp-s1").innerHTML = opts;
+  document.getElementById("cmp-s2").innerHTML = `<option value="">（不选第 3 篇 · 仅两栏对比）</option>` + opts;
+  syncComparatorSelects();
+}
+
+function syncComparatorSelects() {
+  document.getElementById("cmp-s0").value = state.compareIds[0] || PAPERS[0].id;
+  document.getElementById("cmp-s1").value = state.compareIds[1] || PAPERS[1].id;
+  document.getElementById("cmp-s2").value = state.compareIds[2] || "";
+  const activeCount = state.compareIds.filter(Boolean).length;
+  document.getElementById("cmp-count-badge").textContent = String(activeCount);
+}
+
+function toggleCompareId(pid) {
+  if (state.compareIds.includes(pid)) {
+    if (state.compareIds.length <= 2) {
+      // Keep at least 2 slots filled; if removing from 2, clear 3rd slot or skip
+      return;
+    }
+    state.compareIds = state.compareIds.filter(x => x !== pid);
+  } else {
+    if (state.compareIds.length >= 3) {
+      state.compareIds = [state.compareIds[1], state.compareIds[2], pid];
+    } else {
+      state.compareIds.push(pid);
+    }
+  }
+  syncComparatorSelects();
+  renderMatrix();
+  renderComparator();
+}
+
+function renderComparator() {
+  const ids = [
+    document.getElementById("cmp-s0").value,
+    document.getElementById("cmp-s1").value,
+    document.getElementById("cmp-s2").value,
+  ].filter(Boolean);
+  state.compareIds = ids;
+  document.getElementById("cmp-count-badge").textContent = String(ids.length);
+  const cols = ids.map(id => PAPER_MAP[id]).filter(Boolean);
+  const dims = [
+    ["文献与证据等级", p => `<b>${esc(p.name)}</b><br><code>${esc(p.arxiv)}</code> · ${esc(p.venue)}<br><span class="tag">${esc(p.evidence)}</span>${p.withdrawn ? `<span class="tag neg">v2 已撤稿</span>` : ""}`],
+    ["方法家族与实验类型", p => `<span class="tag ${FAMILY_META[p.family].tag}">${esc(FAMILY_META[p.family].full)}</span><div style="margin-top:4px;">${p.expType}</div>`],
+    ["基座模型与思考 / SFT", p => p.modelDetail],
+    ["训练任务池与难度过滤", p => p.poolDetail],
+    ["状态恢复方式", p => `<span class="tag">${esc(RESTORE_META[p.restore])}</span>`],
+    ["分叉 / 分组核心机制", p => p.branchDetail],
+    ["机理诊断真值与指标", p => p.diagDetail],
+    ["算力公平性与随机对照", p => `<span class="tag ${PARITY_META[p.parity].tag}">${esc(PARITY_META[p.parity].label)}</span>${p.hasRandomCtrl ? `<span class="tag pos">含随机/置换对照</span>` : `<span class="tag">无随机置换对照</span>`}<div style="margin-top:4px;">${p.parityDetail}</div>`],
+    ["硬件配置与实测开销", p => p.hwDetail],
+    ["负面发现与本课题借鉴", p => p.negativeTakeaway],
+  ];
+  const thead = `<tr><th class="dim-col">实验设计维度</th>${cols.map(p => `<th>${p.num}. ${esc(p.name)} (${esc(p.year)})</th>`).join("")}</tr>`;
+  const tbody = dims.map(([lbl, fn], idx) => {
+    const cls = idx === dims.length - 1 ? "em" : "";
+    return `<tr class="${cls}"><td class="dim-col">${lbl}</td>${cols.map(p => `<td class="val-col">${fn(p)}</td>`).join("")}</tr>`;
+  }).join("");
+  const wrap = document.getElementById("cmp-table-wrap");
+  wrap.innerHTML = `<table class="booktabs cmp-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+  typeset(wrap);
+}
+
+["cmp-s0", "cmp-s1", "cmp-s2"].forEach(id => {
+  document.getElementById(id).addEventListener("change", () => {
+    renderComparator();
+    renderMatrix();
+  });
+});
+
+document.querySelectorAll("[data-preset]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    state.compareIds = btn.dataset.preset.split(",");
+    syncComparatorSelects();
+    renderComparator();
+    renderMatrix();
+  });
+});
+
+// ---------------- Tab 5: 7 Open Decisions ----------------
+function renderDecisions() {
+  const box = document.getElementById("decisions-container");
+  box.innerHTML = DECISIONS.map(d => `
+    <article class="dec-card">
+      <div class="dec-head">
+        <h3 class="dec-q">决策 ${d.num} · ${esc(d.question)}</h3>
+        <span class="tag ${d.badgeTag}">${esc(d.badge)}</span>
+      </div>
+      <div class="dec-verdict">${d.verdict}</div>
+      <ul class="plain">${d.evidence.map(item => `<li>${item}</li>`).join("")}</ul>
+      <div class="dec-chips">
+        <span style="color:var(--muted);font-weight:600;">直接依据文献（点击展开协议）：</span>
+        ${d.papers.map(pid => {
+          const p = PAPER_MAP[pid];
+          return p ? `<button class="paper-chip" type="button" data-jump="${pid}">${p.num}. ${esc(p.name)}</button>` : "";
+        }).join("")}
+      </div>
+    </article>`).join("");
+  typeset(box);
+}
+
+document.getElementById("decisions-container").addEventListener("click", e => {
+  const chip = e.target.closest("[data-jump]");
+  if (!chip) return;
+  const pid = chip.dataset.jump;
+  // Clear filters so target paper is guaranteed visible
+  document.getElementById("f-reset").click();
+  state.expandedId = pid;
+  renderMatrix();
+  showTab("matrix");
+  const row = document.querySelector(`tr.paper-row[data-pid="${pid}"]`);
+  if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+});
+
+// ---------------- Init ----------------
+renderOverviewChart();
+populateComparatorSelects();
+renderMatrix();
+renderComparator();
+renderDecisions();
+typeset(document.getElementById("overview"));
+typeset(document.getElementById("blueprint"));
+const initHash = location.hash.slice(1);
+if (TAB_IDS.includes(initHash)) showTab(initHash);
+</script>
+</body>
+</html>

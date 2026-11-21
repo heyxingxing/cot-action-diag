@@ -8,7 +8,11 @@
 
 **建议阅读顺序**
 1. [`PROGRESS.md`](PROGRESS.md)：当前进度、配置、全量结果、按图结论、对 w = f(C, H) 的初步回答、已知局限和待办。**最新结论以这里为准。**
-2. **在线报告**：https://heyxingxing.github.io/cot-action-diag/ （即仓库根目录的 `index.html`，由 `scripts/06_build_html_report.py` 生成，含摘要、图表、轨迹浏览器和案例；本地打开需保持仓库目录结构）。
+2. **在线系列报告（GitHub Pages）**：
+   - [第一轮诊断报告（`index.html`）](https://heyxingxing.github.io/cot-action-diag/)：Qwen3-8B 在 ScienceWorld 与 TextWorldExpress 上的离线诊断（E01–E18），含摘要、图表、轨迹浏览器和案例（由 `scripts/06_build_html_report.py` 生成；本地打开需保持仓库目录结构）。
+   - [第一轮诊断问题复盘与重设计（`cot_action_diag_review.html`）](https://heyxingxing.github.io/cot-action-diag/cot_action_diag_review.html)：基于 3,299 步实测数据的现象归因、三类评估范式辨析与 1× A800 改造方案。
+   - [领域 37 篇实验方案对比（`field_experimental_protocols.html`）](https://heyxingxing.github.io/cot-action-diag/field_experimental_protocols.html)：2024–2026 年 38 篇 Agentic RL 信用分配文献（37 条独立实验协议）全文核查矩阵、并排对比器与嵌套分叉蓝图。
+   - [C3A 合成 MDP 与交互计算器（`interactive_credit_explorer.html`）](https://heyxingxing.github.io/cot-action-diag/interactive_credit_explorer.html)：反事实动作对数似然差、CoT 逐 token 熵门控与非负 $k_3$ 教师散度的合成 MDP 实验与交互计算器。
 3. `results/{scienceworld,textworld_express}_full/figures/`、`tables/`：两个 Bench 各 10 张图和统计表；`results/cross_benchmark/`：跨 Bench 对照。
 4. [`docs/experiment_plan_qwen3_8b.md`](docs/experiment_plan_qwen3_8b.md)：实验手册（E01–E18 定义、指标公式、零样本规则）；`docs/cot_action_overview_same_tasks_v2.pdf`：诊断任务设计总览。
 
@@ -22,7 +26,7 @@
 | `data/*_full/` | 全量数据：`episodes.jsonl`（每局）、`turns.jsonl`（每步原始文本和 token ids）、`turn_metrics.jsonl`（每步指标）、`token_stats.parquet`（逐 token logp / 熵 / D） |
 | `data/*_smoke*/` | E01 试水：`_smoke` 为 v2（接口说明书 prompt），`_smoke_v1` 为旧 prompt |
 | `results/` | 图和表 |
-| `index.html`、`assets/katex/` | 交互式报告（GitHub Pages 从仓库根目录发布）及其使用的 KaTeX 0.16.11 |
+| `index.html`、`cot_action_diag_review.html`、`field_experimental_protocols.html`、`interactive_credit_explorer.html`、`assets/katex/` | 4 份交互式系列报告（GitHub Pages 从仓库根目录发布）及其使用的本地离线 KaTeX 0.16.11 |
 | `logs/` | 全量运行和 E01 v2 的终端日志 |
 | `tests/` | 本地无 GPU 端到端自测 |
 

@@ -47,7 +47,9 @@
   .masthead h1 { font-size: 30px; font-weight: 600; line-height: 1.35; margin: 0 0 8px; }
   .masthead .sub { font-size: 17px; color: var(--muted); margin: 0 0 14px; }
   .masthead .meta { font-family: var(--sans); font-size: 13px; color: var(--muted); }
-  .masthead .meta span + span::before { content: "·"; margin: 0 9px; color: var(--faint); }
+  .masthead .meta > span + span::before { content: "·"; margin: 0 9px; color: var(--faint); }
+  .masthead > .meta + .meta { margin-top: 8px; }
+  .masthead .meta a.nav-cur { color: var(--text); font-weight: 600; border-bottom: 1.5px solid var(--text); }
 
   /* Tabs */
   nav.tabs { position: sticky; top: 0; z-index: 40; background: rgba(255,255,255,.96); backdrop-filter: blur(6px); border-bottom: 1px solid var(--border); }
@@ -193,6 +195,12 @@
     <span><a href="https://github.com/heyxingxing/cot-action-diag">代码与数据</a></span>
     <span><a href="https://github.com/heyxingxing/cot-action-diag/blob/main/PROGRESS.md">进度与待办</a></span>
     <span><a href="https://github.com/heyxingxing/cot-action-diag/blob/main/docs/experiment_plan_qwen3_8b.md">实验手册</a></span>
+  </div>
+  <div class="meta" aria-label="系列报告导航">
+    <span><a href="index.html" class="nav-cur" aria-current="page">第一轮诊断报告</a></span>
+    <span><a href="cot_action_diag_review.html">第一轮诊断问题复盘与重设计</a></span>
+    <span><a href="field_experimental_protocols.html">领域 37 篇实验方案对比</a></span>
+    <span><a href="interactive_credit_explorer.html"><code>C3A</code> 合成 MDP 与交互计算器</a></span>
   </div>
 </header>
 
